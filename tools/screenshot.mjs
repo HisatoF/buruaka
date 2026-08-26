@@ -43,19 +43,24 @@ async function waitForServer( url, timeoutMs = 60000 ) {
   return false;
 }
 
-const server = spawn( 'npx', [ 'vite', '--host', '127.0.0.1', '--port', String( PORT ), '--strictPort' ], {
+// `--url` attaches to an already-running dev server, which keeps the
+// iteration loop fast and avoids port contention when several capture runs
+// overlap.
+const EXTERNAL = args.url ?? null;
+
+const server = EXTERNAL ? null : spawn( 'npx', [ 'vite', '--host', '127.0.0.1', '--port', String( PORT ), '--strictPort' ], {
   stdio: [ 'ignore', 'pipe', 'pipe' ],
   env: { ...process.env, NO_COLOR: '1' },
 } );
 let serverLog = '';
-server.stdout.on( 'data', ( d ) => ( serverLog += d ) );
-server.stderr.on( 'data', ( d ) => ( serverLog += d ) );
+server?.stdout.on( 'data', ( d ) => ( serverLog += d ) );
+server?.stderr.on( 'data', ( d ) => ( serverLog += d ) );
 
-const shutdown = () => { try { server.kill( 'SIGTERM' ); } catch {} };
+const shutdown = () => { try { server?.kill( 'SIGTERM' ); } catch {} };
 process.on( 'exit', shutdown );
 process.on( 'SIGINT', () => { shutdown(); process.exit( 130 ); } );
 
-const url = `http://127.0.0.1:${PORT}/`;
+const url = ( EXTERNAL ?? `http://127.0.0.1:${PORT}/` ).replace( /\/$/, '/' ) + ( args.page ?? '' );
 if ( !( await waitForServer( url ) ) ) {
   console.error( 'Dev server never came up.\n' + serverLog );
   process.exit( 1 );
@@ -126,7 +131,7 @@ if ( ready ) {
       // Let the deferred passes (bloom pyramid, SMAA) settle on the new frame.
       await page.waitForTimeout( Number( args.settle ?? 450 ) );
       const file = path.join( OUT, `${name}.png` );
-      await page.screenshot( { path: file } );
+      await page.screenshot( { path: file, fullPage: args.fullPage === 'true' } );
       captured.push( file );
     } catch ( e ) {
       errors.push( `CAPTURE ${name}: ${e.message}` );
@@ -135,7 +140,7 @@ if ( ready ) {
 
   if ( !list.length ) {
     const file = path.join( OUT, 'default.png' );
-    await page.screenshot( { path: file } );
+    await page.screenshot( { path: file, fullPage: args.fullPage === 'true' } );
     captured.push( file );
   }
 }
