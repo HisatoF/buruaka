@@ -19,8 +19,8 @@ export class LightingRig {
     this.key = new THREE.DirectionalLight( options.keyColor ?? 0xfff3e0, options.keyIntensity ?? 1.0 );
     this.key.castShadow = true;
     this.key.shadow.mapSize.set( options.shadowMapSize ?? 2048, options.shadowMapSize ?? 2048 );
-    this.key.shadow.bias = -0.0012;
-    this.key.shadow.normalBias = 0.035;
+    this.key.shadow.bias = -0.0006;
+    this.key.shadow.normalBias = 0.055;
     this.key.shadow.radius = 2.6;
     this.key.shadow.intensity = 1;
 
@@ -39,7 +39,7 @@ export class LightingRig {
     // helpers, imported props) is still lit sensibly.
     this.ambient = new THREE.HemisphereLight(
       options.skyColor ?? 0xbcd8ff,
-      options.groundColor ?? 0x6a5f78,
+      options.groundColor ?? 0x8a7f9c,
       options.ambientIntensity ?? 0.7
     );
     scene.add( this.ambient );

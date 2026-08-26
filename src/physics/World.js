@@ -636,6 +636,7 @@ export class PhysicsWorld {
     body.grounded = false;
     body._wasGrounded = false;
     body.blocked = false;
+    if ( body.hitReaction ) body.hitReaction.reset();
   }
 
   /**
@@ -754,16 +755,17 @@ export class PhysicsWorld {
 
       // Lift, move, then fall back onto whatever is under the new spot.
       body.position.set( startX, startY + body.stepHeight, startZ );
-      this._resolve( body, false );
+      this._resolve( body, false, true );
       body.position.x += wantX;
       body.position.z += wantZ;
-      this._resolve( body, false );
+      this._resolve( body, false, true );
       body.position.y -= body.stepHeight + 0.02;
-      this._resolve( body, false );
+      this._resolve( body, false, true );
 
       const stepProgress = ( body.position.x - startX ) * dxn + ( body.position.z - startZ ) * dzn;
       const accept = body.grounded &&
         stepProgress > slideProgress + 1e-4 &&
+        body.position.y >= startY - 1e-4 &&
         body.position.y <= startY + body.stepHeight + 1e-3;
 
       if ( accept ) {
@@ -778,10 +780,15 @@ export class PhysicsWorld {
       }
     }
 
-    if ( ! body.grounded && body._wasGrounded && desiredDelta.y <= 1e-6 && body.snapDistance > 0 ) {
+    // Snapping exists so walking *down* a step doesn't launch the character.
+    // It must never fire while the body is climbing: a capsule sliding up a
+    // kerb's edge is momentarily un-grounded and moving down in `velocity`
+    // terms, and snapping there would yank it straight back off the ledge.
+    if ( ! body.grounded && body._wasGrounded && desiredDelta.y <= 1e-6 &&
+      body.snapDistance > 0 && body.position.y <= startY + 1e-5 ) {
       const sx = body.position.x, sy = body.position.y, sz = body.position.z;
       body.position.y -= body.snapDistance;
-      this._resolve( body, false );
+      this._resolve( body, false, true );
       if ( ! body.grounded ) body.position.set( sx, sy, sz );
       else if ( cancelVelocity && body.velocity.y < 0 ) body.velocity.y = 0;
     }
@@ -790,9 +797,14 @@ export class PhysicsWorld {
   /**
    * Iterative depenetration against static geometry and other capsules.
    * Updates `body.grounded`, `body.groundNormal` and `body.blocked`.
+   *
+   * `speculative` is used by the step-up / ground-snap trials, which are
+   * *probes* that may be rolled back: in that mode a capsule contact moves only
+   * `body`, never the capsule it touched, so an abandoned trial cannot leave a
+   * neighbour shoved half a centimetre sideways.
    * @private
    */
-  _resolve( body, cancelVelocity ) {
+  _resolve( body, cancelVelocity, speculative = false ) {
     const passes = this._resolveIterations;
     const mask = body.collisionMask;
     const r = body.radius;
@@ -844,7 +856,7 @@ export class PhysicsWorld {
         if ( depth <= PEN_EPS ) continue;
         // Mass-weighted: the heavier body barely gives ground.
         const sum = body.invMass + o.invMass;
-        const wa = sum > 0 ? body.invMass / sum : 1;
+        const wa = speculative ? 1 : ( sum > 0 ? body.invMass / sum : 1 );
         body.position.addScaledVector( _n0, depth * wa );
         if ( wa < 1 ) o.position.addScaledVector( _n0, -depth * ( 1 - wa ) );
         if ( cancelVelocity ) {
@@ -866,8 +878,9 @@ export class PhysicsWorld {
    */
   _contact( body, n, depth, source, cancelVelocity, isDynamic ) {
     const upness = n.y;
+    const walkable = upness >= body.slopeCos;
 
-    if ( upness >= body.slopeCos ) {
+    if ( walkable ) {
       body.grounded = true;
       body.groundNormal.copy( n );
     } else if ( Math.abs( upness ) < 0.7 && depth > PEN_EPS && ! isDynamic ) {
@@ -877,6 +890,20 @@ export class PhysicsWorld {
     if ( cancelVelocity ) {
       const vn = body.velocity.dot( n );
       if ( vn < 0 ) body.velocity.addScaledVector( n, -vn );
+
+      // Sliding along a *tilted* contact converts forward speed into climb —
+      // which is exactly how a capsule walks itself up a kerb, since the top
+      // edge of anything shorter than the bottom cap presents a sloped normal.
+      // Left alone the conversion compounds over substeps and the character
+      // pops several centimetres above the ledge. Cap the donated speed at the
+      // ballistic minimum needed to just reach the ledge top and the pop goes
+      // away without the climb stalling.
+      if ( upness > 1e-3 && upness < 0.9999 && body.velocity.y > 0 &&
+        source !== null && source !== undefined && source.maxY !== undefined ) {
+        const rise = source.maxY - body.position.y;
+        const vMax = rise > 0 ? Math.sqrt( 2 * Math.abs( this.gravity ) * rise ) : 0;
+        if ( body.velocity.y > vMax ) body.velocity.y = vMax;
+      }
     }
 
     // Positive depth = overlap, push out. Small negative depth on a floor =
@@ -974,8 +1001,8 @@ export class PhysicsWorld {
    * @param {THREE.Vector3} [point] world-space point of application.
    * @returns {object} the body.
    */
-  applyImpulse( body, impulse, point ) {
-    return applyImpulse( body, impulse, point );
+  applyImpulse( body, impulse, point, duration = 0.45 ) {
+    return applyImpulse( body, impulse, point, duration );
   }
 
   /* ------------------------------------------------------------- cover -- */
@@ -1043,11 +1070,14 @@ export class PhysicsWorld {
    * @param {number} [mask=LAYER_ALL]
    * @param {HitInfo} [out] destination; defaults to a shared internal record
    *   that the next query will overwrite.
-   * @param {object} [ignoreBody] a body to skip (the shooter, usually).
+   * @param {object} [ignoreBody] a body **or collider** to skip (the shooter,
+   *   usually).
+   * @param {object} [ignoreB] a second thing to skip — used by piercing rounds
+   *   to step through the surface they just punched.
    * @returns {HitInfo} `{ hit, point, normal, distance, body, tag, ... }`
    */
-  raycast( origin, direction, maxDist = Infinity, mask = LAYER_ALL, out = this._hit, ignoreBody = null ) {
-    return this._cast( origin, direction, 0, maxDist, mask, out, ignoreBody );
+  raycast( origin, direction, maxDist = Infinity, mask = LAYER_ALL, out = this._hit, ignoreBody = null, ignoreB = null ) {
+    return this._cast( origin, direction, 0, maxDist, mask, out, ignoreBody, ignoreB );
   }
 
   /**
@@ -1066,17 +1096,18 @@ export class PhysicsWorld {
    * @param {number} [mask=LAYER_ALL]
    * @param {HitInfo} [out]
    * @param {object} [ignoreBody]
+   * @param {object} [ignoreB]
    * @returns {HitInfo}
    */
-  spherecast( origin, direction, radius, maxDist = Infinity, mask = LAYER_ALL, out = this._hit, ignoreBody = null ) {
-    return this._cast( origin, direction, radius, maxDist, mask, out, ignoreBody );
+  spherecast( origin, direction, radius, maxDist = Infinity, mask = LAYER_ALL, out = this._hit, ignoreBody = null, ignoreB = null ) {
+    return this._cast( origin, direction, radius, maxDist, mask, out, ignoreBody, ignoreB );
   }
 
   /**
    * Shared ray / sphere cast. `radius === 0` is the plain ray path.
    * @private
    */
-  _cast( origin, direction, radius, maxDist, mask, out, ignoreBody ) {
+  _cast( origin, direction, radius, maxDist, mask, out, ignoreBody, ignoreB ) {
     out.reset();
     const far = isFinite( maxDist ) ? maxDist : 1e6;
     if ( far <= 0 ) return out;
@@ -1093,6 +1124,7 @@ export class PhysicsWorld {
     // --- planes ------------------------------------------------------------
     for ( let i = 0; i < this.planes.length; i ++ ) {
       const p = this.planes[ i ];
+      if ( p === ignoreBody || p === ignoreB ) continue;
       if ( ! p.enabled || ( p.layer & mask ) === 0 ) continue;
       if ( Math.abs( dy ) < 1e-9 ) continue;
       const above = oy > p.y;
@@ -1110,6 +1142,7 @@ export class PhysicsWorld {
     this._gatherAlong( this._staticGrid, ox, oz, dx, dz, far, radius, cand );
     for ( let i = 0; i < cand.length; i ++ ) {
       const c = cand[ i ];
+      if ( c === ignoreBody || c === ignoreB ) continue;
       if ( ! c.enabled || ( c.layer & mask ) === 0 ) continue;
       let t = -1;
       if ( c.shape === SHAPE_BOX ) {
@@ -1147,7 +1180,7 @@ export class PhysicsWorld {
     this._gatherAlong( this._dynamicGrid, ox, oz, dx, dz, far, radius, dyn );
     for ( let i = 0; i < dyn.length; i ++ ) {
       const b = dyn[ i ];
-      if ( b === ignoreBody || ! b.enabled || ( b.layer & mask ) === 0 ) continue;
+      if ( b === ignoreBody || b === ignoreB || ! b.enabled || ( b.layer & mask ) === 0 ) continue;
       const t = rayVerticalCapsule( ox, oy, oz, dx, dy, dz,
         b.position.x, b.position.z,
         b.position.y + b.radius, b.position.y + b.height - b.radius,
@@ -1323,14 +1356,14 @@ export class PhysicsWorld {
    * @param {object} [ignoreBody]
    * @returns {boolean}
    */
-  lineOfSight( a, b, mask = LAYER_STATIC, ignoreBody = null ) {
+  lineOfSight( a, b, mask = LAYER_STATIC, ignoreBody = null, ignoreB = null ) {
     _v2.subVectors( b, a );
     const dist = _v2.length();
     if ( dist < 1e-6 ) return true;
     _v2.multiplyScalar( 1 / dist );
     // Pull in slightly at both ends so touching the surface you stand on or
     // hug doesn't read as an occluder.
-    const h = this._cast( a, _v2, 0, dist - 1e-3, mask, this._hitTmp, ignoreBody );
+    const h = this._cast( a, _v2, 0, dist - 1e-3, mask, this._hitTmp, ignoreBody, ignoreB );
     return ! h.hit;
   }
 
@@ -1445,4 +1478,512 @@ function rayVerticalCapsule( ox, oy, oz, dx, dy, dz, cx, cz, ay, by, R, maxDist,
     outN.set( ex / l, ey / l, ez / l );
   }
   return best;
+}
+
+/* -------------------------------------------------- impulses & reactions -- */
+
+/** Extra scratch reserved for the impulse / ballistics paths. */
+const _b0 = new THREE.Vector3();
+const _b1 = new THREE.Vector3();
+const _bdir = new THREE.Vector3();
+
+/**
+ * The little struct the animation layer reads to play a directional flinch.
+ *
+ * A character controller has no angular momentum to give the rig, so the
+ * "reaction" is authored rather than simulated: an impulse seeds a direction, a
+ * magnitude and a phase clock, and the curve below turns that into a snappy
+ * push that overshoots once and settles. The rig can consume it however it
+ * likes — a torso lean, an additive hit pose, a camera shake — because all it
+ * ever needs is *which way*, *how hard* and *how much is left*.
+ *
+ * One instance lives on each body and is reused, so hits never allocate.
+ */
+export class HitReaction {
+
+  constructor() {
+    /** @type {THREE.Vector3} unit world-space push direction. */
+    this.direction = new THREE.Vector3( 0, 0, 1 );
+    /** @type {number} peak strength — metres/second of delta-v that caused it. */
+    this.magnitude = 0;
+    /** @type {number} seconds since the impact. */
+    this.time = 0;
+    /** @type {number} total length of the reaction, seconds. */
+    this.duration = 0;
+    /** @type {number} `curve(time)` — the envelope, 1 at impact falling to 0. */
+    this.decay = 0;
+    /** @type {number} signed damped oscillation in `[-1, 1]` for wobble/recoil. */
+    this.wobble = 0;
+    /**
+     * @type {number} fake torque about +Y in `[-1, 1]`: positive when the hit
+     * landed to the character's right of the spine, so the rig can twist.
+     */
+    this.twist = 0;
+    /** @type {THREE.Vector3} world-space impact point. */
+    this.point = new THREE.Vector3();
+    /** @type {boolean} false once the curve has fully decayed. */
+    this.active = false;
+  }
+
+  /**
+   * The decay envelope, normalised time `u = t / duration` in `[0, 1]`.
+   *
+   * `(1-u)^2` — quadratic-out. Linear reads mechanical and exponential never
+   * quite reaches zero (leaving the rig permanently a hair off-pose); this one
+   * lands exactly on zero with a soft tail.
+   * @param {number} u
+   * @returns {number} `[0, 1]`
+   */
+  static envelope( u ) {
+    if ( u <= 0 ) return 1;
+    if ( u >= 1 ) return 0;
+    const k = 1 - u;
+    return k * k;
+  }
+
+  /**
+   * Arms the reaction. Re-arming an active reaction takes the stronger of the
+   * two rather than restarting, so a burst of hits doesn't reset the flinch to
+   * zero on every round.
+   *
+   * @param {THREE.Vector3} direction push direction, need not be normalised.
+   * @param {number} magnitude delta-v in m/s.
+   * @param {number} [duration=0.45] seconds.
+   * @param {THREE.Vector3} [point] world-space impact point.
+   * @param {number} [twist=0] `[-1, 1]`
+   * @returns {HitReaction} this
+   */
+  set( direction, magnitude, duration = 0.45, point = null, twist = 0 ) {
+    const remaining = this.active ? this.magnitude * this.decay : 0;
+    if ( magnitude >= remaining ) {
+      this.direction.copy( direction );
+      const l2 = this.direction.lengthSq();
+      if ( l2 > 1e-12 ) this.direction.multiplyScalar( 1 / Math.sqrt( l2 ) );
+      else this.direction.set( 0, 0, 1 );
+      this.magnitude = magnitude;
+      this.duration = duration > 1e-4 ? duration : 1e-4;
+      this.time = 0;
+      this.decay = 1;
+      this.wobble = 1;
+      this.twist = clamp( twist, -1, 1 );
+      this.active = true;
+      if ( point ) this.point.copy( point );
+    }
+    return this;
+  }
+
+  /** Advances the clock. Called once per substep by the world. */
+  update( dt ) {
+    if ( ! this.active ) return this;
+    this.time += dt;
+    const u = this.time / this.duration;
+    if ( u >= 1 ) {
+      this.decay = 0;
+      this.wobble = 0;
+      this.magnitude = 0;
+      this.active = false;
+      return this;
+    }
+    this.decay = HitReaction.envelope( u );
+    // 2.5 cycles across the reaction: one clear overshoot, then settle.
+    this.wobble = this.decay * Math.cos( u * Math.PI * 5 );
+    return this;
+  }
+
+  /** Current strength in m/s — `magnitude * decay`. */
+  get strength() {
+    return this.magnitude * this.decay;
+  }
+
+  /**
+   * Writes the current displacement suggestion (direction * strength) into
+   * `out`. Allocation free.
+   * @param {THREE.Vector3} out
+   * @returns {THREE.Vector3} `out`
+   */
+  getOffset( out ) {
+    return out.copy( this.direction ).multiplyScalar( this.strength );
+  }
+
+  /** Clears it — respawn, teleport, cutscene. */
+  reset() {
+    this.active = false;
+    this.magnitude = 0;
+    this.decay = 0;
+    this.wobble = 0;
+    this.twist = 0;
+    this.time = 0;
+    return this;
+  }
+
+}
+
+/**
+ * Applies an instantaneous impulse (kg·m/s) to a capsule body and seeds its
+ * {@link HitReaction}.
+ *
+ * The velocity change is the honest `J / m`. The rotational part is not: an
+ * upright controller must never actually tip over, so the lever arm from the
+ * spine to `point` is converted into a `twist` scalar the rig can use for a
+ * shoulder turn. That keeps hits readable without ever letting a character
+ * leave their feet.
+ *
+ * @param {object} body handle from {@link PhysicsWorld#addCapsule}.
+ * @param {THREE.Vector3} impulse world-space impulse, kg·m/s.
+ * @param {THREE.Vector3} [point] world-space point of application.
+ * @param {number} [duration=0.45] reaction length in seconds.
+ * @returns {object} `body`
+ */
+export function applyImpulse( body, impulse, point, duration = 0.45 ) {
+  if ( ! body ) return body;
+
+  const inv = body.invMass || 0;
+  if ( inv > 0 && ! body.kinematic ) {
+    body.velocity.addScaledVector( impulse, inv );
+    // An upward kick has to break the ground contact, or the very next
+    // moveCharacter snaps the character straight back down onto the floor.
+    if ( body.velocity.y > 1e-3 ) {
+      body.grounded = false;
+      body._wasGrounded = false;
+    }
+  }
+
+  const mag = impulse.length() * ( inv > 0 ? inv : 1 / 60 );
+
+  let twist = 0;
+  if ( point ) {
+    // Lever arm from the spine, crossed with the push, projected on +Y.
+    _b0.set( point.x - body.position.x, 0, point.z - body.position.z );
+    twist = ( _b0.z * impulse.x - _b0.x * impulse.z );
+    const s = Math.abs( twist );
+    if ( s > 1e-6 ) twist /= Math.max( s, impulse.length() * body.radius );
+    twist = clamp( twist, -1, 1 );
+  }
+
+  if ( body.hitReaction === null || body.hitReaction === undefined ) {
+    body.hitReaction = new HitReaction();
+  }
+  _b1.copy( impulse );
+  body.hitReaction.set( _b1, mag, duration, point || body.position, twist );
+  return body;
+}
+
+/* ------------------------------------------------------------ ballistics -- */
+
+/** Hard pool size. 512 live rounds is far past what the wave director spawns. */
+const PROJECTILE_CAPACITY = 512;
+/** Nudge a ricochet off the surface so the next cast doesn't re-hit at t=0. */
+const RICOCHET_SKIN = 1e-3;
+/** Sweep resolutions allowed inside one substep (pierce chains, corners). */
+const MAX_SWEEP_ITER = 6;
+
+/**
+ * Pooled projectile simulation.
+ *
+ * The whole point of this class is the sweep: a 300 m/s rifle round covers
+ * 2.5 m in a single 1/120 s substep, so integrating position and *then* testing
+ * for overlap would walk straight through a 10 cm wall and out the far side.
+ * Instead each substep spherecasts the round's own displacement, stops at the
+ * first surface along it, and continues from there with the time it has left.
+ * Tunnelling is impossible by construction, at any speed.
+ *
+ * Everything is pooled and every field is pre-allocated: `spawn` reuses a slot,
+ * `step` writes into module scratch, and a full magazine in flight allocates
+ * nothing.
+ *
+ * @example
+ * const guns = new Ballistics( world );
+ * guns.spawn( {
+ *   origin: muzzle, direction: aim, speed: 300, radius: 0.02,
+ *   damage: 18, ownerId: hina.id, owner: hina,
+ *   mask: LAYER_STATIC | LAYER_ENEMY,
+ *   onHit: ( hit, p ) => combat.damage( hit.body, p.damage, hit ),
+ * } );
+ * guns.step( dt );
+ */
+export class Ballistics {
+
+  /**
+   * @param {PhysicsWorld} world
+   * @param {object} [options]
+   * @param {number} [options.capacity=512] pool size.
+   */
+  constructor( world, options = {} ) {
+    /** @type {PhysicsWorld} */
+    this.world = world;
+    /** @type {number} */
+    this.capacity = options.capacity ?? PROJECTILE_CAPACITY;
+
+    /** @type {Array<object>} every slot, live or not. */
+    this.pool = new Array( this.capacity );
+    /** @type {Array<object>} the live ones, unordered. */
+    this.active = [];
+    /** @type {Array<object>} free slots, LIFO so the cache stays warm. */
+    this._free = [];
+
+    for ( let i = 0; i < this.capacity; i ++ ) {
+      const p = {
+        active: false,
+        slot: i,
+        id: 0,
+        position: new THREE.Vector3(),
+        prevPosition: new THREE.Vector3(),
+        velocity: new THREE.Vector3(),
+        radius: 0.02,
+        speed: 0,
+        damage: 0,
+        ownerId: 0,
+        owner: null,
+        mask: LAYER_STATIC | LAYER_CHARACTER | LAYER_ENEMY,
+        gravityScale: 1,
+        drag: 0,
+        life: 0,
+        maxLife: 4,
+        pierce: 0,
+        ricochet: 0,
+        ricochetCos: 0.5,
+        restitution: 0.5,
+        distance: 0,
+        hitCount: 0,
+        tag: null,
+        userData: null,
+        onHit: null,
+        onExpire: null,
+        _ignore: null,
+      };
+      this.pool[ i ] = p;
+      this._free.push( p );
+    }
+
+    this._acc = 0;
+    this._nextId = 1;
+    /** Private hit record so a user `onHit` callback can safely re-query. */
+    this._hit = new HitInfo();
+    /** @type {number} live count, for the HUD / profiler. */
+    this.liveCount = 0;
+    /** @type {number} rounds dropped because the pool was full. */
+    this.starvedCount = 0;
+  }
+
+  /** Quality scaling per the engine-wide contract. Ballistics never degrades. */
+  setQuality( /* level */ ) {}
+
+  /**
+   * Fires a round.
+   *
+   * @param {object} opts
+   * @param {THREE.Vector3} opts.origin muzzle position.
+   * @param {THREE.Vector3} opts.direction aim vector; normalised defensively.
+   * @param {number} [opts.speed=300] m/s.
+   * @param {number} [opts.gravityScale=1] 0 = laser, 1 = bullet drop, 3 = mortar.
+   * @param {number} [opts.drag=0] per-second exponential velocity decay.
+   * @param {number} [opts.radius=0.02] sweep radius; >0 gives forgiving hits.
+   * @param {number} [opts.damage=0] carried through to `onHit`.
+   * @param {number} [opts.ownerId=0] so friendly fire can be filtered.
+   * @param {object} [opts.owner] shooter body, excluded from its own cast.
+   * @param {number} [opts.mask] layers this round collides with.
+   * @param {number} [opts.maxLife=4] seconds before it expires.
+   * @param {number} [opts.pierce=0] extra surfaces it punches through.
+   * @param {number} [opts.ricochet=0] deflections allowed off shallow angles.
+   * @param {number} [opts.ricochetCos=0.5] cosine of incidence below which a
+   *   deflection is allowed; `1` always bounces (grenades).
+   * @param {number} [opts.restitution=0.5] speed kept through a deflection.
+   * @param {function(HitInfo, object): void} [opts.onHit]
+   * @param {function(object): void} [opts.onExpire]
+   * @param {*} [opts.tag]
+   * @param {*} [opts.userData]
+   * @returns {object|null} the projectile, or `null` when the pool is dry.
+   */
+  spawn( opts ) {
+    const p = this._free.pop();
+    if ( p === undefined ) { this.starvedCount ++; return null; }
+
+    const speed = opts.speed ?? 300;
+    p.position.copy( opts.origin );
+    p.prevPosition.copy( opts.origin );
+    _bdir.copy( opts.direction );
+    const l2 = _bdir.lengthSq();
+    if ( l2 > 1e-12 ) _bdir.multiplyScalar( 1 / Math.sqrt( l2 ) );
+    else _bdir.set( 0, 0, 1 );
+    p.velocity.copy( _bdir ).multiplyScalar( speed );
+
+    p.active = true;
+    p.id = this._nextId ++;
+    p.speed = speed;
+    p.radius = opts.radius ?? 0.02;
+    p.damage = opts.damage ?? 0;
+    p.ownerId = opts.ownerId ?? 0;
+    p.owner = opts.owner ?? null;
+    p.mask = opts.mask ?? ( LAYER_STATIC | LAYER_CHARACTER | LAYER_ENEMY );
+    p.gravityScale = opts.gravityScale ?? 1;
+    p.drag = opts.drag ?? 0;
+    p.life = 0;
+    p.maxLife = opts.maxLife ?? 4;
+    p.pierce = opts.pierce ?? 0;
+    p.ricochet = opts.ricochet ?? 0;
+    p.ricochetCos = opts.ricochetCos ?? 0.5;
+    p.restitution = opts.restitution ?? 0.5;
+    p.distance = 0;
+    p.hitCount = 0;
+    p.tag = opts.tag ?? null;
+    p.userData = opts.userData ?? null;
+    p.onHit = opts.onHit ?? null;
+    p.onExpire = opts.onExpire ?? null;
+    p._ignore = null;
+
+    this.active.push( p );
+    this.liveCount = this.active.length;
+    return p;
+  }
+
+  /**
+   * Retires a round. Safe to call from inside an `onHit` callback — the sweep
+   * checks `active` after every callback.
+   * @param {object} p
+   */
+  despawn( p ) {
+    if ( ! p.active ) return;
+    p.active = false;
+  }
+
+  /** Retires everything. Use on round reset so old shots can't score. */
+  clear() {
+    for ( let i = 0; i < this.active.length; i ++ ) this.active[ i ].active = false;
+    this._sweepDead();
+    this._acc = 0;
+  }
+
+  /**
+   * Advances every live round with the same fixed 1/120 s accumulator the world
+   * uses, so ballistics and character motion never drift apart.
+   * @param {number} dt seconds.
+   */
+  step( dt ) {
+    if ( ! ( dt > 0 ) ) return;
+    this._acc += Math.min( dt, 0.25 );
+    let n = 0;
+    while ( this._acc >= FIXED_DT && n < MAX_SUBSTEPS ) {
+      this._substep( FIXED_DT );
+      this._acc -= FIXED_DT;
+      n ++;
+    }
+    if ( n === MAX_SUBSTEPS && this._acc > FIXED_DT ) this._acc = 0;
+  }
+
+  /** @private */
+  _substep( h ) {
+    const act = this.active;
+    const g = this.world.gravity;
+    let dead = false;
+
+    for ( let i = 0; i < act.length; i ++ ) {
+      const p = act[ i ];
+      if ( ! p.active ) { dead = true; continue; }
+
+      p.life += h;
+      if ( p.life >= p.maxLife ) {
+        p.active = false;
+        dead = true;
+        if ( p.onExpire ) p.onExpire( p );
+        continue;
+      }
+
+      if ( p.gravityScale !== 0 ) p.velocity.y += g * p.gravityScale * h;
+      // Exponential so the decay is identical at any substep size.
+      if ( p.drag > 0 ) p.velocity.multiplyScalar( Math.exp( - p.drag * h ) );
+
+      p.prevPosition.copy( p.position );
+      this._sweep( p, h );
+      if ( ! p.active ) dead = true;
+    }
+
+    if ( dead ) this._sweepDead();
+  }
+
+  /**
+   * Sweeps one round through `h` seconds, stopping at each surface it meets.
+   * @private
+   */
+  _sweep( p, h ) {
+    const world = this.world;
+    const hit = this._hit;
+    let remaining = h;
+
+    for ( let iter = 0; iter < MAX_SWEEP_ITER; iter ++ ) {
+      if ( ! p.active || remaining <= 1e-9 ) return;
+
+      const speed = p.velocity.length();
+      if ( speed < 1e-6 ) return;
+      _bdir.copy( p.velocity ).multiplyScalar( 1 / speed );
+      const dist = speed * remaining;
+
+      world._cast( p.position, _bdir, p.radius, dist, p.mask, hit, p.owner, p._ignore );
+
+      if ( ! hit.hit ) {
+        p.position.addScaledVector( _bdir, dist );
+        p.distance += dist;
+        return;
+      }
+
+      const travel = hit.distance;
+      p.position.addScaledVector( _bdir, travel );
+      p.distance += travel;
+      remaining -= travel / speed;
+      p.hitCount ++;
+
+      // Keep the surface normal: the callback is free to re-query, which would
+      // otherwise clobber the shared record it is reading from.
+      _b1.copy( hit.normal );
+
+      if ( p.onHit ) p.onHit( hit, p );
+      if ( ! p.active ) return;
+
+      const cosI = - _bdir.dot( _b1 );
+
+      if ( p.ricochet > 0 && cosI <= p.ricochetCos ) {
+        p.ricochet --;
+        // v' = v - (1 + e) (v·n) n, with e = restitution.
+        const vn = p.velocity.dot( _b1 );
+        p.velocity.addScaledVector( _b1, - ( 1 + p.restitution ) * vn );
+        p.position.addScaledVector( _b1, p.radius + RICOCHET_SKIN );
+        p._ignore = null;
+        continue;
+      }
+
+      if ( p.pierce > 0 ) {
+        p.pierce --;
+        // Ignore what we just punched for the rest of the flight, then step
+        // clear of it so the next cast starts in open air.
+        p._ignore = hit.body !== null ? hit.body : hit.collider;
+        p.position.addScaledVector( _bdir, RICOCHET_SKIN );
+        continue;
+      }
+
+      p.active = false;
+      return;
+    }
+  }
+
+  /** Compacts the active list and returns dead slots to the pool. @private */
+  _sweepDead() {
+    const act = this.active;
+    let w = 0;
+    for ( let i = 0; i < act.length; i ++ ) {
+      const p = act[ i ];
+      if ( p.active ) { act[ w ++ ] = p; }
+      else { p.onHit = null; p.onExpire = null; p.owner = null; p.userData = null; p._ignore = null; this._free.push( p ); }
+    }
+    act.length = w;
+    this.liveCount = w;
+  }
+
+  /**
+   * Iterates live rounds — for the renderer's tracer instancing.
+   * @param {function(object): void} fn
+   */
+  forEach( fn ) {
+    const act = this.active;
+    for ( let i = 0; i < act.length; i ++ ) if ( act[ i ].active ) fn( act[ i ] );
+  }
+
 }

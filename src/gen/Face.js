@@ -194,9 +194,9 @@ function drawOpenEye( ctx, S, opts ) {
 
   // Occlusion under the upper lid. Without it the white wedges read as
   // paper cut-outs sitting on top of the iris.
-  const aoGrad = ctx.createLinearGradient( 0, topY + squash, 0, botY * 0.92 );
-  aoGrad.addColorStop( 0, 'rgba(126,116,158,0.80)' );
-  aoGrad.addColorStop( 0.42, 'rgba(178,172,204,0.24)' );
+  const aoGrad = ctx.createLinearGradient( 0, topY + squash, 0, topY + squash + ( botY - topY ) * 0.42 );
+  aoGrad.addColorStop( 0, 'rgba(120,110,152,0.72)' );
+  aoGrad.addColorStop( 0.5, 'rgba(172,166,200,0.20)' );
   aoGrad.addColorStop( 1, 'rgba(255,255,255,0)' );
   ctx.fillStyle = aoGrad;
   ctx.fillRect( 0, 0, S, S );
@@ -275,9 +275,9 @@ function drawOpenEye( ctx, S, opts ) {
     ctx.fill();
 
     // Secondary, lower-right, softer — this pair is what sells the sphere.
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.62;
     ctx.beginPath();
-    ctx.ellipse( irisCX + irisRX * 0.44, irisCY + irisRY * 0.40, irisRX * 0.19, irisRY * 0.13, 0.3, 0, Math.PI * 2 );
+    ctx.ellipse( irisCX + irisRX * 0.46, irisCY + irisRY * 0.42, irisRX * 0.13, irisRY * 0.095, 0.3, 0, Math.PI * 2 );
     ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -320,21 +320,22 @@ function drawOpenEye( ctx, S, opts ) {
       [ topX - 0.10 * S, topY + squash ],
       [ topX, topY + squash ],
 
-      [ topX + 0.20 * S, topY + squash - 0.005 * S ],
-      [ OUT_X - 0.14 * S, OUT_Y - 0.16 * S ],
+      [ topX + 0.22 * S, topY + squash + 0.004 * S ],
+      [ OUT_X - 0.20 * S, OUT_Y - 0.055 * S ],
       [ OUT_X, OUT_Y ],
 
-      [ OUT_X + 0.045 * S, OUT_Y - 0.035 * S ],
-      [ OUT_X + 0.068 * S, OUT_Y - 0.075 * S ],
-      [ OUT_X + 0.082 * S, OUT_Y - 0.125 * S ],
+      [ OUT_X + 0.040 * S, OUT_Y - 0.030 * S ],
+      [ OUT_X + 0.066 * S, OUT_Y - 0.072 * S ],
+      [ OUT_X + 0.088 * S, OUT_Y - 0.130 * S ],
     ],
+    // The path is three cubics, so t = 1/3 is the lid peak and t = 2/3 is the
+    // outer corner. Full weight across the lid, then a long run-out through
+    // the flick to a needle point.
     ( t ) => {
-      // Hairline in, full weight across the lid, running out to a point in
-      // the flick.
-      if ( t < 0.12 ) return W * ( 0.16 + ( t / 0.12 ) * 0.72 );
-      if ( t < 0.60 ) return W * ( 0.88 + Math.sin( ( t - 0.12 ) / 0.48 * Math.PI ) * 0.12 );
-      if ( t < 0.78 ) return W * ( 0.88 - ( ( t - 0.60 ) / 0.18 ) * 0.22 );
-      return W * 0.66 * Math.pow( 1 - ( t - 0.78 ) / 0.22, 0.85 );
+      if ( t < 0.10 ) return W * ( 0.14 + ( t / 0.10 ) * 0.76 );
+      if ( t < 0.50 ) return W * ( 0.90 + Math.sin( ( t - 0.10 ) / 0.40 * Math.PI ) * 0.10 );
+      if ( t < 0.667 ) return W * ( 0.90 - ( ( t - 0.50 ) / 0.167 ) * 0.42 );
+      return W * 0.48 * Math.pow( 1 - ( t - 0.667 ) / 0.333, 1.25 );
     },
     lashGrad
   );
@@ -704,7 +705,7 @@ export function makeHeadSkin( {
 
   // Subtle warmth toward the cheeks and jaw so the head isn't a flat fill
   // once the toon ramp flattens it.
-  const warm = ctx.createRadialGradient( size * 0.5, size * 0.62, size * 0.08, size * 0.5, size * 0.60, size * 0.44 );
+  const warm = ctx.createRadialGradient( size * 0.5, size * 0.66, size * 0.08, size * 0.5, size * 0.64, size * 0.44 );
   warm.addColorStop( 0, 'rgba(255,190,170,0.20)' );
   warm.addColorStop( 1, 'rgba(255,190,170,0)' );
   ctx.fillStyle = warm;
@@ -714,7 +715,7 @@ export function makeHeadSkin( {
   // "anime blush" rather than "rosacea".
   for ( const sx of [ -1, 1 ] ) {
     const cx = size * ( 0.5 + sx * 0.185 );
-    const cy = size * 0.575;
+    const cy = size * 0.612;
     const g = ctx.createRadialGradient( cx, cy, 0, cx, cy, size * 0.105 );
     g.addColorStop( 0, hex( blush ) + 'b0' );
     g.addColorStop( 0.55, hex( blush ) + '55' );
@@ -747,8 +748,8 @@ export function makeHeadSkin( {
   ctx.lineWidth = size * 0.010;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo( size * 0.505, size * 0.520 );
-  ctx.lineTo( size * 0.493, size * 0.552 );
+  ctx.moveTo( size * 0.506, size * 0.700 );
+  ctx.lineTo( size * 0.492, size * 0.734 );
   ctx.stroke();
   ctx.restore();
 
@@ -760,7 +761,7 @@ export function makeHeadSkin( {
     for ( let i = 0; i < 26; i++ ) {
       const side = rnd() < 0.5 ? -1 : 1;
       const x = size * ( 0.5 + side * ( 0.12 + rnd() * 0.10 ) );
-      const y = size * ( 0.545 + ( rnd() - 0.5 ) * 0.055 );
+      const y = size * ( 0.590 + ( rnd() - 0.5 ) * 0.055 );
       ctx.beginPath();
       ctx.arc( x, y, size * ( 0.004 + rnd() * 0.003 ), 0, Math.PI * 2 );
       ctx.fill();
@@ -769,6 +770,92 @@ export function makeHeadSkin( {
   }
 
   return toTexture( canvas );
+}
+
+
+/* ---------------------------------------------------------------------- */
+/* Combined face atlas                                                     */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * Composites the eye, brow and mouth atlases into a single texture.
+ *
+ * All six face cards (two eyes, two brows, one mouth, plus a spare slot) then
+ * share one material, so a character's entire face is one draw call and
+ * changing expression is a UV-offset write rather than a texture swap.
+ *
+ * Layout on a 1024² sheet:
+ *   rows    0– 512  eyes,   4 x 2 cells of 256
+ *   rows  512– 640  brows,  4 x 1 cells of 256 x 128
+ *   rows  640– 768  mouths, 8 x 1 cells of 128
+ *   rows  768–1024  spare (a flat white patch at the far corner)
+ *
+ * @returns {{ texture: THREE.Texture, frames: Record<string, {x:number,y:number,w:number,h:number}> }}
+ *          Frame keys are prefixed: `eye.open`, `brow.angry`, `mouth.cat`.
+ */
+export function makeFaceAtlas( {
+  size = 1024,
+  irisColor = 0x4fb3e8,
+  lashColor = 0x2a2038,
+  scleraColor = 0xfdfcff,
+  shape = 'round',
+  sparkle = true,
+  browColor = 0x6b4a3a,
+  mouthInk = 0x8a4a52,
+  mouthInner = 0x7a2f3c,
+} = {} ) {
+  const canvas = createCanvas( size, size );
+  const ctx = canvas.getContext( '2d' );
+  ctx.clearRect( 0, 0, size, size );
+
+  const frames = {};
+  const S = size / 1024; // everything below is authored against a 1024 sheet
+
+  // Sources are rendered oversized and downsampled into the sheet: the ink
+  // strokes are thin, and drawing them at final resolution aliases badly.
+  const eyes = makeEyeAtlas( { cell: 384, irisColor, lashColor, scleraColor, shape, sparkle } );
+  const brows = makeBrowAtlas( { cell: 384, color: browColor } );
+  const mouths = makeMouthAtlas( { cell: 256, ink: mouthInk, inner: mouthInner } );
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const eyeCell = 256 * S;
+  EYE_FRAMES.forEach( ( name, i ) => {
+    const col = i % EYE_COLS, row = Math.floor( i / EYE_COLS );
+    const dx = col * eyeCell, dy = row * eyeCell;
+    ctx.drawImage( eyes.texture.image, col * 384, row * 384, 384, 384, dx, dy, eyeCell, eyeCell );
+    frames[ `eye.${name}` ] = { x: dx / size, y: 1 - ( dy + eyeCell ) / size, w: eyeCell / size, h: eyeCell / size };
+  } );
+
+  const browW = 256 * S, browH = 128 * S, browY = 512 * S;
+  BROW_FRAMES.forEach( ( name, i ) => {
+    const dx = i * browW;
+    // The source brow cell is square with the stroke in the middle band, so
+    // only that band is copied across.
+    ctx.drawImage( brows.texture.image, i * 384, 384 * 0.25, 384, 384 * 0.5, dx, browY, browW, browH );
+    frames[ `brow.${name}` ] = { x: dx / size, y: 1 - ( browY + browH ) / size, w: browW / size, h: browH / size };
+  } );
+
+  const mouthCell = 128 * S, mouthY = 640 * S;
+  MOUTH_FRAMES.forEach( ( name, i ) => {
+    const sx = ( i % 4 ) * 256, sy = Math.floor( i / 4 ) * 256;
+    const dx = i * mouthCell;
+    ctx.drawImage( mouths.texture.image, sx, sy, 256, 256, dx, mouthY, mouthCell, mouthCell );
+    frames[ `mouth.${name}` ] = { x: dx / size, y: 1 - ( mouthY + mouthCell ) / size, w: mouthCell / size, h: mouthCell / size };
+  } );
+
+  // Dispose the oversized intermediates; only the sheet survives.
+  eyes.texture.dispose();
+  brows.texture.dispose();
+  mouths.texture.dispose();
+
+  const tex = toTexture( canvas );
+  // Mipmaps would bleed neighbouring atlas cells into each other at distance,
+  // and the face is small on screen exactly when that would show.
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  return { texture: tex, frames };
 }
 
 export { createCanvas, toTexture, hex, mixHex, shade };

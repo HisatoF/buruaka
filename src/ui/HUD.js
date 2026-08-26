@@ -138,7 +138,7 @@ const GLYPHS = {
   shield:'<path d="M32 7 l19 7 v14 c0 12-8 20-19 25 -11-5-19-13-19-25 V14 Z"/>',
   heal:  '<path d="M26 8 h12 v14 h14 v12 H38 v14 H26 V34 H12 V22 h14 Z"/>',
   shot:  '<path d="M10 26 h30 l-6-9 h9 l11 12 -11 12 h-9 l6-9 H10 Z"/>',
-  aoe:   '<path d="M32 6 a26 26 0 1 1 -.1 0 Z M32 16 a16 16 0 1 0 .1 0 Z"/><circle cx="32" cy="32" r="7"/>',
+  aoe:   '<path fill-rule="evenodd" d="M32 6 a26 26 0 1 0 .1 0 Z M32 16 a16 16 0 1 1 -.1 0 Z"/><circle cx="32" cy="32" r="7"/>',
 };
 
 function skillSVG( kind, color ) {
@@ -238,6 +238,7 @@ export class WorldMarker {
     cssVar( r.fill, '--v', f.toFixed( 4 ) );
     cssVar( r.ghost, '--v', f.toFixed( 4 ) );
     cssVar( r.shield, '--v', ( max > 0 ? CLAMP( shield / max, 0, 1 ) : 0 ).toFixed( 4 ) );
+    cssVar( r.shield, '--at', f.toFixed( 4 ) );
     cssVar( r.bar, '--tick', ( 100 / Math.max( 1, Math.min( 10, Math.ceil( max / 250 ) ) ) ).toFixed( 3 ) + '%' );
   }
 
@@ -366,6 +367,8 @@ export class HUD {
     const tagI = el( 'i', null, tag, 'BOSS' );
     const name = el( 'div', 'boss__name', head );
     const hp = el( 'div', 'boss__hp', head );
+    const hpNow = el( 'span', null, hp );
+    const hpMax = el( 'small', null, hp );
 
     const bar = el( 'div', 'bar boss__bar', boss );
     const ghost = el( 'i', 'ghost', bar );
@@ -376,7 +379,7 @@ export class HUD {
     const gates = el( 'div', 'boss__gates', bar );
     const phases = el( 'div', 'boss__phases', boss );
 
-    this.boss = { root: boss, tagI, name, hp, bar, ghost, fill, shield, gates, phases, ghostV: 1, key: '' };
+    this.boss = { root: boss, tagI, name, hpNow, hpMax, bar, ghost, fill, shield, gates, phases, ghostV: 1, key: '' };
   }
 
   _buildSquad() {
@@ -458,6 +461,7 @@ export class HUD {
       vig: el( 'div', 'fx__vig', fx ),
       low: el( 'div', 'fx__low', fx ),
       flash: el( 'div', 'fx__flash', fx ),
+      speed: el( 'div', 'fx__speed', fx ),
     };
   }
 
@@ -591,6 +595,14 @@ export class HUD {
     ro.observe( this.el );
     this._ro = ro;
 
+    /* The boss bar parks directly beneath the top bar, whose height depends on
+       wrapping. Measure it here — on resize only — never inside update(). */
+    const topRo = new ResizeObserver( ( e ) => {
+      cssVar( this.el, '--top-h', Math.ceil( e[ 0 ].contentRect.height ) + 'px' );
+    } );
+    topRo.observe( this.top.top );
+    this._topRo = topRo;
+
     this.deck.skills.addEventListener( 'click', ( e ) => {
       const b = e.target.closest( '.skill' );
       if ( b && !b.disabled ) this._fireSkill( Number( b.dataset.i ) );
@@ -651,7 +663,7 @@ export class HUD {
     t.fire.addEventListener( 'pointerup', () => this.cb.onFire?.( false ) );
     t.dash.addEventListener( 'click', () => this.cb.onDash?.() );
 
-    this.setSettings( this.settings );
+    this._applySettings();                       // no callback during construction
   }
 
   _fireSkill( i ) {
@@ -672,6 +684,12 @@ export class HUD {
   /** Merge a settings patch, refresh the controls and report it upward. */
   setSettings( patch ) {
     Object.assign( this.settings, patch );
+    this._applySettings();
+    this.cb.onSettings?.( { ...this.settings } );
+  }
+
+  /** Push `this.settings` into the controls without notifying the host. */
+  _applySettings() {
     const s = this.screens.settings;
     const q = this.settings.quality | 0;
     s.segBtns.forEach( ( b, i ) => attr( b, 'aria-checked', i === q ? 'true' : 'false' ) );
@@ -681,7 +699,6 @@ export class HUD {
       cssVar( ui.inp, '--p', v + '%' );
       txt( ui.v, v + '%' );
     }
-    this.cb.onSettings?.( { ...this.settings } );
   }
 
   /* ---------------- per-frame update ---------------- */
@@ -718,7 +735,7 @@ export class HUD {
     tog( this.screens.title, 'is-on', phase === 'title' );
     tog( this.screens.results, 'is-on', phase === 'results' );
     if ( phase !== 'title' ) this._toggleSettings( false );
-    if ( phase === 'results' ) pulse( this.screens.res, 'res' );
+    if ( phase === 'results' ) requestAnimationFrame( () => replay( this.screens.res ) );
   }
 
   _updTop( s ) {
@@ -753,8 +770,10 @@ export class HUD {
     cssVar( b.fill, '--v', f.toFixed( 4 ) );
     cssVar( b.ghost, '--v', f.toFixed( 4 ) );
     cssVar( b.shield, '--v', CLAMP( ( d.shield || 0 ) / max, 0, 1 ).toFixed( 4 ) );
+    cssVar( b.shield, '--at', f.toFixed( 4 ) );
     cssVar( b.bar, '--tick', ( 100 / Math.max( 2, Math.min( 40, d.ticks || 20 ) ) ).toFixed( 4 ) + '%' );
-    txt( b.hp, fmt( d.hp || 0 ) );
+    txt( b.hpNow, fmt( d.hp || 0 ) );
+    txt( b.hpMax, ' / ' + fmt( max ) );
 
     const phases = d.phases || [];
     const key = phases.map( ( p ) => p.label + ':' + p.at ).join( '|' );
@@ -921,8 +940,8 @@ export class HUD {
       const c = d.cards[ i ];
       const artKey = ( k.icon || 'burst' ) + ( k.color || '#35a3ea' );
       if ( c.artKey !== artKey ) { c.artKey = artKey; c.art.innerHTML = skillSVG( k.icon || 'burst', k.color || '#35a3ea' ); }
-      txt( c.name, k.name || 'EX SKILL' );
-      txt( c.student, k.student || '' );
+      txt( c.name, k.student || k.name || 'EX' );
+      txt( c.student, k.student ? ( k.name || '' ) : '' );
       txt( c.key, k.key || String( i + 1 ) );
 
       const cn = Math.max( 0, Math.min( 8, k.cost | 0 ) );
@@ -955,3 +974,500 @@ export class HUD {
     const low = !!( s.feedback && s.feedback.lowHp );
     tog( this.fx.low, 'on', low );
   }
+
+  /* ---------------- world markers ---------------- */
+
+  /**
+   * Acquire (or reuse) an imperative marker. The caller owns it until it calls
+   * `release()`. Declarative markers in `state.markers` use the same pool.
+   */
+  marker( id, type = 'enemy' ) {
+    let m = this._markers.get( id );
+    if ( m && m.type === type && m.alive ) return m;
+    if ( m ) this._retire( id, m );
+    m = this._acquire( type );
+    m.declared = false;
+    this._markers.set( id, m );
+    return m;
+  }
+
+  _acquire( type ) {
+    const pool = this._mkPool;
+    for ( let i = 0; i < pool.length; i++ ) {
+      if ( pool[ i ].type === type ) {
+        const m = pool.splice( i, 1 )[ 0 ];
+        m.alive = true;
+        m.occluded = false;
+        m.el.classList.remove( 'is-hidden', 'is-off', 'is-occluded' );
+        this.world.appendChild( m.el );
+        return m;
+      }
+    }
+    const m = new WorldMarker( type );
+    this.world.appendChild( m.el );
+    return m;
+  }
+
+  _retire( id, m ) {
+    this._markers.delete( id );
+    m.alive = false;
+    m.el.remove();
+    m.el.classList.add( 'is-hidden' );
+    if ( this._mkPool.length < 64 ) this._mkPool.push( m );
+  }
+
+  _updWorld( s, cam ) {
+    const list = s.markers;
+    if ( list ) {
+      const seen = this._mkSeen || ( this._mkSeen = new Set() );
+      seen.clear();
+      for ( let i = 0; i < list.length; i++ ) {
+        const d = list[ i ];
+        if ( !d || d.id == null ) continue;
+        seen.add( d.id );
+        const type = d.type || 'enemy';
+        let m = this._markers.get( d.id );
+        if ( !m || m.type !== type ) {
+          if ( m ) this._retire( d.id, m );
+          m = this._acquire( type );
+          this._markers.set( d.id, m );
+          m.__nk = ''; m.__tk = '';
+        }
+        m.declared = true;
+        if ( d.position ) m.position = d.position;
+        m.offset = d.offset ?? ( type === 'objective' ? 0 : 2.0 );
+        m.occluded = !!d.occluded;
+        m.offscreen = d.offscreen ?? ( type === 'objective' || type === 'elite' );
+        const nk = ( d.name || '' ) + '|' + ( d.level || '' );
+        if ( m.__nk !== nk ) { m.__nk = nk; m.setName( d.name || '', d.level ); }
+        if ( d.maxHp ) m.setHP( d.hp ?? 0, d.maxHp, d.shield || 0 );
+        m.setTags( d.tags );
+        cssVar( m.el, '--mk-col', d.color || ( type === 'objective' ? '#35a3ea' : '#ff5d6c' ) );
+        if ( d.hp != null && d.maxHp ) tog( m.el, 'is-crit', d.hp / d.maxHp <= 0.25 );
+      }
+      for ( const [ id, m ] of this._markers ) {
+        if ( m.declared && !seen.has( id ) ) this._retire( id, m );
+      }
+    }
+    for ( const [ id, m ] of this._markers ) {
+      if ( !m.alive ) { this._retire( id, m ); continue; }
+      this._placeMarker( m, cam );
+    }
+  }
+
+  _placeMarker( m, cam ) {
+    const p = this._proj || ( this._proj = { x: 0, y: 0, z: 0, w: 0, d: 0 } );
+    const pos = m.position;
+    if ( !project( cam, pos.x, ( pos.y || 0 ) + m.offset, pos.z, p ) ) {
+      tog( m.el, 'is-hidden', true );
+      return;
+    }
+
+    const W = this._w, H = this._h;
+    const behind = p.w <= 0;
+    let sx = ( p.x * 0.5 + 0.5 ) * W;
+    let sy = ( -p.y * 0.5 + 0.5 ) * H;
+    if ( behind ) { sx = W - sx; sy = H - sy; }
+
+    const pad = 34;
+    const out = behind || sx < pad || sx > W - pad || sy < pad || sy > H - pad;
+
+    if ( out && m.offscreen ) {
+      const cx = W * 0.5, cy = H * 0.5;
+      let dx = sx - cx, dy = sy - cy;
+      const len = Math.hypot( dx, dy ) || 1;
+      dx /= len; dy /= len;
+      const hx = ( W * 0.5 - pad ) / ( Math.abs( dx ) || 1e-4 );
+      const hy = ( H * 0.5 - pad ) / ( Math.abs( dy ) || 1e-4 );
+      const t = Math.min( hx, hy );
+      sx = cx + dx * t;
+      sy = cy + dy * t;
+      tog( m.el, 'is-off', true );
+      tog( m.el, 'is-hidden', false );
+      tog( m.el, 'is-occluded', false );
+      cssVar( m.refs.arrow, '--rot', ( Math.atan2( dx, -dy ) * 57.29577951308232 ).toFixed( 1 ) + 'deg' );
+      txt( m.refs.dist, Math.round( p.d ) + 'm' );
+      cssVar( m.inner, '--s', '1' );
+    } else {
+      tog( m.el, 'is-off', false );
+      tog( m.el, 'is-hidden', out );
+      tog( m.el, 'is-occluded', m.occluded );
+      const s = CLAMP( 16 / Math.max( 2, p.d ), 0.5, 1.25 );
+      cssVar( m.inner, '--s', s.toFixed( 3 ) );
+    }
+    m.el.style.transform = `translate3d(${ sx.toFixed( 1 ) }px, ${ sy.toFixed( 1 ) }px, 0)`;
+  }
+
+  /* ---------------- damage numbers ---------------- */
+
+  /**
+   * Spawn one floating number.
+   * @param {number|string} value
+   * @param {string} kind  normal | crit | weak | heal | block | miss
+   * @param {{x,y,z}} position  world point (or screen px when opts.screen)
+   */
+  damage( value, kind = 'normal', position = null, opts = {} ) {
+    const d = this._dmg[ this._dmgHead ];
+    this._dmgHead = ( this._dmgHead + 1 ) % this._dmg.length;
+
+    attr( d.el, 'data-k', kind );
+    txt( d.v, typeof value === 'number' ? fmt( value ) : String( value ) );
+    const tag = opts.tag ?? ( kind === 'crit' ? 'CRITICAL' : kind === 'weak' ? 'WEAK POINT' : kind === 'block' ? 'GUARD' : '' );
+    txt( d.tag, tag );
+    d.tag.style.display = tag ? 'block' : 'none';
+
+    const spread = kind === 'crit' ? 34 : 24;
+    cssVar( d.el, '--dx', ( ( Math.random() * 2 - 1 ) * spread ).toFixed( 0 ) + 'px' );
+    cssVar( d.el, '--dy', ( -( kind === 'crit' ? 64 : 44 ) - Math.random() * 18 ).toFixed( 0 ) + 'px' );
+
+    d.screen = !!opts.screen;
+    if ( position ) { d.pos.x = position.x; d.pos.y = position.y || 0; d.pos.z = position.z || 0; }
+    d.jitter = ( Math.random() * 2 - 1 ) * 16;
+    d.rise = opts.rise ?? 1.9;
+    d.live = true;
+    d.until = performance.now() + 950;
+    d.el.classList.add( 'is-live' );
+    replay( d.el );
+    return d;
+  }
+
+  _updDamage( cam, now ) {
+    const p = this._proj || ( this._proj = { x: 0, y: 0, z: 0, w: 0, d: 0 } );
+    const W = this._w, H = this._h;
+    for ( let i = 0; i < this._dmg.length; i++ ) {
+      const d = this._dmg[ i ];
+      if ( !d.live ) continue;
+      if ( now >= d.until ) {
+        d.live = false;
+        d.el.classList.remove( 'is-live' );
+        d.el.style.transform = 'translate3d(-9999px,-9999px,0)';
+        continue;
+      }
+      let sx, sy;
+      if ( d.screen ) { sx = d.pos.x; sy = d.pos.y; }
+      else {
+        if ( !project( cam, d.pos.x, d.pos.y + d.rise, d.pos.z, p ) || p.w <= 0 ) {
+          d.el.style.transform = 'translate3d(-9999px,-9999px,0)';
+          continue;
+        }
+        sx = ( p.x * 0.5 + 0.5 ) * W + d.jitter;
+        sy = ( -p.y * 0.5 + 0.5 ) * H;
+      }
+      d.el.style.transform = `translate3d(${ sx.toFixed( 1 ) }px, ${ sy.toFixed( 1 ) }px, 0)`;
+    }
+  }
+
+  /* ---------------- hit feedback ---------------- */
+
+  /** Directional damage vignette. `angle` is radians, 0 = dead ahead. */
+  hit( angle = 0, strength = 1 ) {
+    const v = this.fx.vig;
+    cssVar( v, '--hx', ( 50 + Math.sin( angle ) * 44 ).toFixed( 1 ) + '%' );
+    cssVar( v, '--hy', ( 50 - Math.cos( angle ) * 44 ).toFixed( 1 ) + '%' );
+    cssVar( v, '--hs', CLAMP( strength, 0.2, 1 ).toFixed( 2 ) );
+    pulse( v, 'is-hit' );
+  }
+
+  /** Screen-edge flash — used on skill activation and big events. */
+  flash( color = 'rgba(127,214,255,.95)' ) {
+    cssVar( this.fx.flash, '--fc', color );
+    pulse( this.fx.flash, 'is-on' );
+  }
+
+  /* ---------------- banners ---------------- */
+
+  /**
+   * @param {string} main   headline, e.g. "WAVE INCOMING"
+   * @param {string} sub    kicker line
+   * @param {string} kind   wave | danger | clear | defeat
+   * @param {number} life   total ms on screen
+   */
+  banner( main, sub = '', kind = 'wave', life = 2400 ) {
+    const n = el( 'div', 'bn', this.banners );
+    attr( n, 'data-k', kind );
+    cssVar( n, '--life', life + 'ms' );
+    el( 'div', 'bn__band', n );
+    const stripe = el( 'div', 'bn__stripe', n );
+    if ( kind === 'wave' || kind === 'danger' ) stripe.classList.add( 'hazard' );
+    const t = el( 'div', 'bn__txt', n );
+    el( 'div', 'bn__main', t, main );
+    if ( sub ) el( 'div', 'bn__sub', t, sub );
+    const done = () => n.remove();
+    n.addEventListener( 'animationend', ( e ) => { if ( e.target === n ) done(); } );
+    setTimeout( done, life + 400 );
+    return n;
+  }
+
+  /* ---------------- event queue ---------------- */
+
+  /**
+   * Consume `state.events` — a plain array the game pushes into and the HUD
+   * empties every frame, so no allocation-per-event contract is imposed.
+   */
+  _drain( s ) {
+    const q = s.events;
+    if ( !q || !q.length ) return;
+    for ( let i = 0; i < q.length; i++ ) {
+      const e = q[ i ];
+      if ( !e ) continue;
+      switch ( e.t ) {
+        case 'damage': this.damage( e.value, e.kind, e.position, e ); break;
+        case 'hit':    this.hit( e.angle || 0, e.strength ); break;
+        case 'flash':  this.flash( e.color ); break;
+        case 'banner': this.banner( e.main, e.sub, e.kind, e.life ); break;
+        case 'skill':  { const c = this.deck.cards[ e.index ]; if ( c ) pulse( c.el, 'is-fire' ); break; }
+        default: break;
+      }
+    }
+    q.length = 0;
+  }
+
+  /* ---------------- results ---------------- */
+
+  _updResults( s ) {
+    const r = s.results;
+    const sc = this.screens;
+    if ( !r ) return;
+    const key = JSON.stringify( r );
+    if ( key === sc.key ) return;
+    sc.key = key;
+
+    txt( sc.rTitle, r.title || ( r.fail ? 'MISSION FAILED' : 'MISSION COMPLETE' ) );
+    tog( sc.rTitle, 'is-fail', !!r.fail );
+
+    const rank = ( r.rank || 'C' ).toUpperCase();
+    attr( sc.stamp, 'data-r', rank );
+    txt( sc.stampL, rank );
+
+    const rows = r.stats && r.stats.length ? r.stats : [
+      { label: 'SCORE', value: fmt( r.score || 0 ) },
+      { label: 'TIME', value: clock( r.time || 0 ) },
+      { label: 'WAVES CLEARED', value: `${ r.waves || 0 } / ${ r.wavesTotal || r.waves || 0 }` },
+      { label: 'MAX COMBO', value: fmt( r.combo || 0 ) },
+    ];
+    const host = sc.stats;
+    while ( host.children.length > rows.length ) host.lastChild.remove();
+    while ( host.children.length < rows.length ) {
+      const n = el( 'div', 'rrow', host );
+      el( 'em', null, n );
+      el( 'b', null, n );
+    }
+    for ( let i = 0; i < rows.length; i++ ) {
+      txt( host.children[ i ].children[ 0 ], rows[ i ].label );
+      txt( host.children[ i ].children[ 1 ], rows[ i ].value );
+    }
+
+    const us = r.units || [];
+    const uh = sc.units;
+    while ( uh.children.length > us.length ) uh.lastChild.remove();
+    while ( uh.children.length < us.length ) {
+      const n = el( 'div', 'ru', uh );
+      const nm = el( 'div', 'ru__n', n );
+      el( 'i', null, nm );
+      el( 'span', null, nm );
+      for ( let c = 0; c < 3; c++ ) {
+        const v = el( 'div', 'ru__v', n );
+        el( 'span', null, v );
+        el( 's', null, v );
+      }
+    }
+    const COLS = [ [ 'damage', 'DAMAGE' ], [ 'kills', 'DEFEATED' ], [ 'healed', 'HEALED' ] ];
+    for ( let i = 0; i < us.length; i++ ) {
+      const n = uh.children[ i ];
+      const u = us[ i ];
+      cssVar( n, '--i', String( i ) );
+      cssVar( n, '--u-col', u.color || '#35a3ea' );
+      const chip = n.children[ 0 ].children[ 0 ];
+      const ck = ( u.id || u.name || 'x' ) + '|' + ( u.color || '#35a3ea' );
+      if ( chip.__ck !== ck ) { chip.__ck = ck; chip.innerHTML = portraitSVG( u.id || u.name || 'x', u.color || '#35a3ea' ); }
+      txt( n.children[ 0 ].children[ 1 ], u.name || '???' );
+      for ( let c = 0; c < 3; c++ ) {
+        const cell = n.children[ c + 1 ];
+        txt( cell.children[ 0 ], fmt( u[ COLS[ c ][ 0 ] ] || 0 ) );
+        txt( cell.children[ 1 ], COLS[ c ][ 1 ] );
+      }
+    }
+  }
+
+  /* ---------------- lifecycle ---------------- */
+
+  /** Show/hide the whole HUD without tearing it down. */
+  setVisible( on ) { tog( this.el, 'is-hidden', !on ); }
+
+  dispose() {
+    window.removeEventListener( 'keydown', this._onKey );
+    this._ro?.disconnect();
+    this._topRo?.disconnect();
+    this._markers.clear();
+    this._units.clear();
+    this.el.remove();
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* projection — camera-agnostic, no THREE import                          */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * Project a world point through any THREE camera without importing THREE.
+ * Writes NDC into `out.x/out.y/out.z`, clip w into `out.w` and view-space
+ * distance into `out.d`. Returns false when the camera has no usable matrices.
+ */
+function project( cam, x, y, z, out ) {
+  const vmi = cam.matrixWorldInverse, pmi = cam.projectionMatrix;
+  if ( !vmi || !pmi || !vmi.elements || !pmi.elements ) return false;
+  const v = vmi.elements, p = pmi.elements;
+
+  const vx = v[ 0 ] * x + v[ 4 ] * y + v[ 8 ]  * z + v[ 12 ];
+  const vy = v[ 1 ] * x + v[ 5 ] * y + v[ 9 ]  * z + v[ 13 ];
+  const vz = v[ 2 ] * x + v[ 6 ] * y + v[ 10 ] * z + v[ 14 ];
+
+  const cx = p[ 0 ] * vx + p[ 4 ] * vy + p[ 8 ]  * vz + p[ 12 ];
+  const cy = p[ 1 ] * vx + p[ 5 ] * vy + p[ 9 ]  * vz + p[ 13 ];
+  const cz = p[ 2 ] * vx + p[ 6 ] * vy + p[ 10 ] * vz + p[ 14 ];
+  const cw = p[ 3 ] * vx + p[ 7 ] * vy + p[ 11 ] * vz + p[ 15 ];
+
+  const iw = cw === 0 ? 1e6 : 1 / cw;
+  out.x = cx * iw;
+  out.y = cy * iw;
+  out.z = cz * iw;
+  out.w = cw;
+  out.d = Math.hypot( vx, vy, vz );
+  return true;
+}
+
+/* ---------------------------------------------------------------------- */
+/* MOCK_STATE — the full `update(state)` schema, populated                 */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * Every field the HUD reads. Everything is optional except `phase`; missing
+ * branches simply render nothing. `events` is a queue the game pushes into and
+ * the HUD empties each frame.
+ */
+export const MOCK_STATE = {
+  /* 'title' | 'playing' | 'results' */
+  phase: 'playing',
+
+  mission: {
+    name: 'SHANHAIJING CORRIDOR',
+    subtitle: 'OPERATION 04-3 · HARD',
+    objective: 'Suppress the Hieromonk before reinforcements arrive',
+    wave: 3,
+    waves: 8,
+    time: 214,          // seconds — counts however the game likes
+    timeLimit: 300,
+    urgent: false,
+  },
+
+  boss: {
+    visible: true,
+    name: 'HIEROMONK — GOZ',
+    tag: 'BOSS',
+    hp: 41200,
+    maxHp: 68000,
+    shield: 5400,
+    ticks: 24,          // number of segment ticks along the bar
+    phases: [           // `at` = HP fraction where the phase begins (descending)
+      { label: 'PHASE I',   at: 1.00 },
+      { label: 'PHASE II',  at: 0.66 },
+      { label: 'PHASE III', at: 0.33 },
+    ],
+  },
+
+  squad: [
+    {
+      id: 'aru', name: 'ARU', role: 'STRIKER', color: '#ff5d6c',
+      hp: 1840, maxHp: 2400, tickEvery: 400,
+      armor: 3, armorMax: 4,
+      dead: false, active: true,
+      status: [
+        { id: 'atk', kind: 'buff',   icon: '▲', name: 'Attack Up',   stacks: 2, duration: 6.2, maxDuration: 10 },
+        { id: 'brn', kind: 'debuff', icon: '火', name: 'Burning',     stacks: 1, duration: 2.1, maxDuration: 8 },
+      ],
+    },
+    {
+      id: 'hina', name: 'HINA', role: 'SPECIAL', color: '#7a6ce0',
+      hp: 640, maxHp: 2900, tickEvery: 400,
+      armor: 1, armorMax: 4,
+      dead: false, active: false,
+      status: [ { id: 'shd', kind: 'shield', icon: '盾', name: 'Barrier', stacks: 1, duration: 4, maxDuration: 12 } ],
+    },
+    {
+      id: 'shiroko', name: 'SHIROKO', role: 'STRIKER', color: '#7fd6ff',
+      hp: 2210, maxHp: 2210, tickEvery: 400,
+      armor: 4, armorMax: 4,
+      dead: false, active: false,
+      status: [ { id: 'hst', kind: 'heal', icon: '＋', name: 'Regen', stacks: 3, duration: 9, maxDuration: 12 } ],
+    },
+    {
+      id: 'hoshino', name: 'HOSHINO', role: 'TANK', color: '#ffb0c8',
+      hp: 0, maxHp: 3600, tickEvery: 400,
+      armor: 0, armorMax: 4,
+      dead: true, active: false,
+      status: [],
+    },
+  ],
+
+  cost: { value: 6.4, max: 10 },
+
+  skills: [
+    { name: 'FULL BARRAGE', student: 'ARU',     key: '1', icon: 'burst',  color: '#ff5d6c', cost: 4, cooldown: 0,   cooldownMax: 22, locked: false },
+    { name: 'DEMOLITION',   student: 'HINA',    key: '2', icon: 'aoe',    color: '#7a6ce0', cost: 5, cooldown: 8.4, cooldownMax: 26, locked: false },
+    { name: 'PRECISION',    student: 'SHIROKO', key: '3', icon: 'shot',   color: '#7fd6ff', cost: 3, cooldown: 0,   cooldownMax: 18, locked: false },
+    { name: 'BULWARK',      student: 'HOSHINO', key: '4', icon: 'shield', color: '#ffb0c8', cost: 8, cooldown: 0,   cooldownMax: 30, locked: false },
+  ],
+
+  /* World-anchored DOM. `position` may be a THREE.Vector3 or any {x,y,z}. */
+  markers: [
+    { id: 'e1', type: 'enemy', position: { x: -3.2, y: 0, z: -6 },  offset: 2.0,
+      name: 'SENTRY', level: 42, hp: 620,  maxHp: 900,  shield: 0,   tags: [ 'LIGHT' ], occluded: false },
+    { id: 'e2', type: 'enemy', position: { x: 4.6, y: 0, z: -9 },   offset: 2.0,
+      name: 'GUNNER', level: 44, hp: 300,  maxHp: 900,  shield: 120, tags: [ 'LIGHT' ], occluded: true },
+    { id: 'b1', type: 'elite', position: { x: 0.4, y: 0, z: -16 },  offset: 3.4,
+      name: 'HIEROMONK', level: 60, hp: 41200, maxHp: 68000, shield: 5400,
+      tags: [ 'ELASTIC', 'BOSS' ], color: '#ff5d6c', occluded: false, offscreen: true },
+    { id: 'ally1', type: 'ally', position: { x: -1.6, y: 0, z: -2 }, offset: 2.0,
+      name: 'SHIROKO', hp: 2210, maxHp: 2210, color: '#7fd6ff' },
+    { id: 'obj', type: 'objective', position: { x: -14, y: 1.2, z: -22 }, offset: 0,
+      name: 'EXTRACT', color: '#35a3ea', offscreen: true },
+    { id: 'obj2', type: 'objective', position: { x: 18, y: 1.2, z: 12 }, offset: 0,
+      name: 'SUPPLY', color: '#4ce0a4', offscreen: true },
+  ],
+
+  feedback: { lowHp: true },
+
+  /* Drained and cleared by the HUD every frame. */
+  events: [
+    // { t:'damage', value:1234, kind:'crit', position:{x,y,z}, tag:'CRITICAL' }
+    // { t:'hit', angle: 1.2, strength: 0.8 }
+    // { t:'flash', color:'rgba(127,214,255,.95)' }
+    // { t:'banner', main:'WAVE INCOMING', sub:'WAVE 04 / 08', kind:'wave', life:2400 }
+    // { t:'skill', index: 0 }
+  ],
+
+  /* Only read while phase === 'results'. */
+  results: {
+    title: 'MISSION COMPLETE',
+    fail: false,
+    rank: 'S',
+    score: 184920,
+    time: 268,
+    waves: 8,
+    wavesTotal: 8,
+    combo: 143,
+    stats: [
+      { label: 'SCORE',         value: '184,920' },
+      { label: 'CLEAR TIME',    value: '04:28' },
+      { label: 'WAVES CLEARED', value: '8 / 8' },
+      { label: 'MAX COMBO',     value: '143' },
+      { label: 'DAMAGE TAKEN',  value: '4,180' },
+    ],
+    units: [
+      { id: 'aru',     name: 'ARU',     color: '#ff5d6c', damage: 84210, kills: 41, healed: 0 },
+      { id: 'hina',    name: 'HINA',    color: '#7a6ce0', damage: 61905, kills: 33, healed: 0 },
+      { id: 'shiroko', name: 'SHIROKO', color: '#7fd6ff', damage: 38820, kills: 22, healed: 1200 },
+      { id: 'hoshino', name: 'HOSHINO', color: '#ffb0c8', damage: 9140,  kills: 4,  healed: 8640 },
+    ],
+  },
+};

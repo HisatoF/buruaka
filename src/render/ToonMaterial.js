@@ -21,9 +21,18 @@ varying vec3 vNormalView;
 varying vec3 vNormalWorld;
 varying vec3 vViewPosition;
 varying vec2 vUv;
+varying vec3 vObjPos;
+
+#ifdef USE_VERTEX_TINT
+  attribute vec3 tint;
+  varying vec3 vTint;
+#endif
 
 void main() {
   vUv = uv;
+  #ifdef USE_VERTEX_TINT
+    vTint = tint;
+  #endif
 
   #include <beginnormal_vertex>
   #include <morphinstance_vertex>
@@ -41,6 +50,7 @@ void main() {
   #include <project_vertex>
 
   vViewPosition = -mvPosition.xyz;
+  vObjPos = transformed;
 
   #include <worldpos_vertex>
   #include <shadowmap_vertex>
@@ -85,9 +95,10 @@ uniform float uSpecGloss;
 uniform float uSpecStrength;
 uniform float uSpecStep;
 uniform float uSpecSoft;
-uniform float uSpecBand;        // >0 folds a horizontal band mask over spec (hair)
+uniform float uSpecBand;        // 1 = band over UV.y, 2 = band over object-space Y
 uniform float uSpecBandPos;
 uniform float uSpecBandWidth;
+uniform float uSpecBandRepeat;  // secondary band offset, for the classic double highlight
 
 // --- ambient / emissive ----------------------------------------------
 uniform vec3  uSkyColor;
@@ -100,6 +111,11 @@ varying vec3 vNormalView;
 varying vec3 vNormalWorld;
 varying vec3 vViewPosition;
 varying vec2 vUv;
+varying vec3 vObjPos;
+
+#ifdef USE_VERTEX_TINT
+  varying vec3 vTint;
+#endif
 
 float bandStep( float x, float edge, float soft ) {
   return smoothstep( edge - soft, edge + soft, x );
@@ -109,6 +125,9 @@ void main() {
   vec4 texel = vec4( 1.0 );
   if ( uHasMap > 0.5 ) texel = texture2D( uMap, vUv );
   vec3 base = uColor * texel.rgb;
+  #ifdef USE_VERTEX_TINT
+    base *= vTint;
+  #endif
   float alpha = uOpacity * texel.a;
   if ( alpha < uAlphaTest ) discard;
 
@@ -165,7 +184,16 @@ void main() {
   float spec = pow( ndh, uSpecGloss );
   spec = bandStep( spec, uSpecStep, uSpecSoft );
   if ( uSpecBand > 0.5 ) {
-    spec *= 1.0 - smoothstep( 0.0, uSpecBandWidth, abs( vUv.y - uSpecBandPos ) );
+    // Anime hair carries a hard highlight band that reads as a ring around
+    // the head. Driving it from skinned object-space Y (mode 2) keeps it at a
+    // fixed height on the hair regardless of how each strand is unwrapped;
+    // driving it from UV.y (mode 1) suits cylindrical parts like sleeves.
+    float coord = uSpecBand > 1.5 ? vObjPos.y : vUv.y;
+    float band = 1.0 - smoothstep( 0.0, uSpecBandWidth, abs( coord - uSpecBandPos ) );
+    if ( uSpecBandRepeat > 0.0 ) {
+      band = max( band, ( 1.0 - smoothstep( 0.0, uSpecBandWidth * 0.6, abs( coord - uSpecBandPos + uSpecBandRepeat ) ) ) * 0.55 );
+    }
+    spec *= band;
   }
   spec *= step( 0.0, ndl ) * shadowMask;
   vec3 specular = uSpecColor * spec * uSpecStrength;
@@ -192,8 +220,8 @@ export const TOON_DEFAULTS = {
   map: null,
   opacity: 1,
   alphaTest: 0,
-  shadowTint: 0x7a72a8,
-  midTint: 0xb9b2d4,
+  shadowTint: 0x9c94c4,
+  midTint: 0xcac3e4,
   shadowStep: 0.48,
   shadowSoft: 0.035,
   midStep: 0.66,
@@ -214,9 +242,10 @@ export const TOON_DEFAULTS = {
   specBand: 0,
   specBandPos: 0.72,
   specBandWidth: 0.09,
+  specBandRepeat: 0,
   skyColor: 0xa8cbff,
   groundColor: 0x6b5f7a,
-  ambient: 0.30,
+  ambient: 0.42,
   emissive: 0x000000,
   emissiveIntensity: 1,
 };
@@ -225,12 +254,19 @@ export function createToonMaterial( options = {} ) {
   const o = { ...TOON_DEFAULTS, ...options };
   const c = ( v ) => new THREE.Color( v );
 
+  // Ramp tints are *multipliers*, not colours to be looked at, so they must
+  // not be gamma-decoded. Passing 0x999999 through the usual sRGB conversion
+  // yields 0.33 rather than 0.6, which crushes every saturated dark to black —
+  // a navy skirt ends up indistinguishable from the outline around it.
+  const mul = ( v ) => new THREE.Color().setHex( v, THREE.LinearSRGBColorSpace );
+
   const material = new THREE.ShaderMaterial( {
     lights: true,
     fog: true,
     transparent: o.opacity < 1 || !!options.transparent,
     side: options.side ?? THREE.FrontSide,
     depthWrite: options.depthWrite ?? true,
+    defines: options.vertexTint ? { USE_VERTEX_TINT: '' } : {},
     vertexShader,
     fragmentShader,
     uniforms: THREE.UniformsUtils.merge( [
@@ -242,8 +278,8 @@ export function createToonMaterial( options = {} ) {
         uHasMap: { value: 0 },
         uAlphaTest: { value: o.alphaTest },
         uOpacity: { value: o.opacity },
-        uShadowTint: { value: c( o.shadowTint ) },
-        uMidTint: { value: c( o.midTint ) },
+        uShadowTint: { value: mul( o.shadowTint ) },
+        uMidTint: { value: mul( o.midTint ) },
         uShadowStep: { value: o.shadowStep },
         uShadowSoft: { value: o.shadowSoft },
         uMidStep: { value: o.midStep },
@@ -264,6 +300,7 @@ export function createToonMaterial( options = {} ) {
         uSpecBand: { value: o.specBand },
         uSpecBandPos: { value: o.specBandPos },
         uSpecBandWidth: { value: o.specBandWidth },
+        uSpecBandRepeat: { value: o.specBandRepeat },
         uSkyColor: { value: c( o.skyColor ) },
         uGroundColor: { value: c( o.groundColor ) },
         uAmbient: { value: o.ambient },
@@ -308,7 +345,15 @@ uniform vec2  uResolution;
 
 attribute vec3 aSmoothNormal;
 
+#ifdef USE_VERTEX_TINT
+  attribute vec3 tint;
+  varying vec3 vTint;
+#endif
+
 void main() {
+  #ifdef USE_VERTEX_TINT
+    vTint = tint;
+  #endif
   vec3 smoothN = aSmoothNormal;
   if ( length( smoothN ) < 0.001 ) smoothN = normal;
 
@@ -340,24 +385,65 @@ void main() {
 
 const outlineFragment = /* glsl */ `
 uniform vec3 uOutlineColor;
+uniform float uTintMix;
+
+#ifdef USE_VERTEX_TINT
+  varying vec3 vTint;
+#endif
+
 void main() {
-  gl_FragColor = vec4( uOutlineColor, 1.0 );
+  vec3 c = uOutlineColor;
+  #ifdef USE_VERTEX_TINT
+    // A pure black outline flattens a cel character. Blending the stroke
+    // toward a deep, desaturated version of the surface underneath keeps
+    // blonde hair from being fenced in by the same ink as a navy skirt.
+    vec3 deep = mix( vTint * 0.34, uOutlineColor, 0.45 );
+    c = mix( uOutlineColor, deep, uTintMix );
+  #endif
+  gl_FragColor = vec4( c, 1.0 );
   #include <colorspace_fragment>
 }
 `;
 
-export function createOutlineMaterial( { color = 0x2b2138, thickness = 0.0032, minPixels = 1.15 } = {} ) {
+export function createOutlineMaterial( {
+  color = 0x2b2138, thickness = 0.0032, minPixels = 1.15,
+  vertexTint = false, tintMix = 0.75,
+} = {} ) {
   return new THREE.ShaderMaterial( {
+    defines: vertexTint ? { USE_VERTEX_TINT: '' } : {},
     vertexShader: outlineVertex,
     fragmentShader: outlineFragment,
     side: THREE.BackSide,
     uniforms: {
       uOutlineColor: { value: new THREE.Color( color ) },
+      uTintMix: { value: tintMix },
       uThickness: { value: thickness },
       uMinPixels: { value: minPixels },
       uResolution: { value: new THREE.Vector2( 1920, 1080 ) },
     },
   } );
+}
+
+/**
+ * Fills a `tint` attribute with one colour, converted to the renderer's
+ * working colour space.
+ *
+ * This is what lets an entire character — skin, shirt, skirt, socks, shoes —
+ * merge into a single geometry and render in one draw call while still
+ * reading as separate materials. A per-part texture atlas would do the same
+ * job but bleeds across cells under mipmapping; a vertex attribute cannot.
+ */
+export function paintGeometry( geometry, hexColor ) {
+  const c = new THREE.Color( hexColor );
+  const count = geometry.attributes.position.count;
+  const arr = new Float32Array( count * 3 );
+  for ( let i = 0; i < count; i++ ) {
+    arr[ i * 3 ] = c.r;
+    arr[ i * 3 + 1 ] = c.g;
+    arr[ i * 3 + 2 ] = c.b;
+  }
+  geometry.setAttribute( 'tint', new THREE.BufferAttribute( arr, 3 ) );
+  return geometry;
 }
 
 /**

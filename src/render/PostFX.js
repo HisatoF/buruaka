@@ -19,14 +19,14 @@ const GradeShader = {
   uniforms: {
     tDiffuse: { value: null },
     uExposure: { value: 1.0 },
-    uContrast: { value: 1.09 },
-    uSaturation: { value: 1.12 },
+    uContrast: { value: 1.045 },
+    uSaturation: { value: 1.10 },
     uLift: { value: new THREE.Color( 0x0a1120 ) },
     uGain: { value: new THREE.Color( 0xfff4e2 ) },
     uSplitStrength: { value: 0.35 },
-    uVignette: { value: 0.40 },
+    uVignette: { value: 0.30 },
     uVignetteSoft: { value: 0.62 },
-    uAberration: { value: 0.0016 },
+    uAberration: { value: 0.0008 },
     uGrain: { value: 0.011 },
     uTime: { value: 0 },
     uResolution: { value: new THREE.Vector2( 1920, 1080 ) },
@@ -84,22 +84,30 @@ const GradeShader = {
         color *= compressed / max( m, 1e-4 );
       }
 
-      // Split-tone: push shadows toward uLift, highlights toward uGain.
-      float l = luma( color );
+      // Everything below is a colourist's grade, and a colourist works in a
+      // perceptual space. Applying contrast around a 0.5 pivot to LINEAR
+      // radiance crushes every saturated dark to black — a navy skirt at
+      // linear 0.055 lands at 0.015, which is why this has to round-trip
+      // through gamma first.
+      vec3 g = pow( max( color, vec3( 0.0 ) ), vec3( 1.0 / 2.2 ) );
+
+      float l = luma( g );
       vec3 shadowPush = uLift * ( 1.0 - smoothstep( 0.0, 0.55, l ) );
       vec3 highlightPush = ( uGain - vec3( 1.0 ) ) * smoothstep( 0.45, 1.0, l );
-      color += ( shadowPush + highlightPush ) * uSplitStrength;
+      g += ( shadowPush + highlightPush ) * uSplitStrength;
 
-      color = ( color - 0.5 ) * uContrast + 0.5;
-      color = mix( vec3( luma( color ) ), color, uSaturation );
+      g = ( g - 0.5 ) * uContrast + 0.5;
+      g = mix( vec3( luma( g ) ), g, uSaturation );
 
       // Vignette.
-      float vig = smoothstep( 0.8, uVignetteSoft * 0.5, sqrt( r2 ) );
-      color *= mix( 1.0, vig, uVignette );
+      float vig = smoothstep( 0.85, uVignetteSoft * 0.5, sqrt( r2 ) );
+      g *= mix( 1.0, vig, uVignette );
 
-      // Fine grain keeps large flat cel areas from banding.
-      float g = hash( gl_FragCoord.xy + fract( uTime ) * 137.0 ) - 0.5;
-      color += g * uGrain;
+      // Fine grain keeps large flat cel areas from banding. Applied in gamma
+      // space so it stays perceptually even instead of vanishing in shadow.
+      g += ( hash( gl_FragCoord.xy + fract( uTime ) * 137.0 ) - 0.5 ) * uGrain;
+
+      color = pow( max( g, vec3( 0.0 ) ), vec3( 2.2 ) );
 
       color = mix( color, uFlashColor, clamp( uFlash, 0.0, 1.0 ) );
 
@@ -168,7 +176,7 @@ export class PostFX {
     // 0 = potato, 1 = balanced, 2 = maximum.
     this.bloomPass.enabled = level >= 1;
     this.smaaPass.enabled = level >= 1;
-    this.grade.uAberration.value = level >= 2 ? 0.0016 : 0;
+    this.grade.uAberration.value = level >= 2 ? 0.0008 : 0;
     this.grade.uGrain.value = level >= 1 ? 0.011 : 0;
   }
 
