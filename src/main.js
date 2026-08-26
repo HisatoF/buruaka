@@ -5,6 +5,7 @@ import { Sky } from './render/Sky.js';
 import { LightingRig } from './render/Lighting.js';
 import { Game } from './game/Game.js';
 import { HUD } from './ui/HUD.js';
+import { AudioEngine } from './core/Audio.js';
 
 const boot = document.getElementById( 'boot' );
 const bootBar = boot?.querySelector( '.boot-bar i' );
@@ -53,11 +54,13 @@ async function main() {
     onPause: () => { paused = !paused; },
   } );
 
+  const audio = new AudioEngine();
+
   const game = new Game( {
     scene: engine.scene,
     camera: engine.camera,
     hud,
-    audio: null,
+    audio,
     quality: 2,
   } );
 
@@ -69,9 +72,14 @@ async function main() {
       lighting.setQuality( s.quality );
       game.setQuality( s.quality );
     }
+    if ( s.master !== undefined ) audio.setVolume( 'master', s.master );
+    if ( s.sfx !== undefined ) audio.setVolume( 'sfx', s.sfx );
   }
 
   function startMission() {
+    // Browsers only allow audio to begin from a user gesture, and the PLAY
+    // button is the first one this game gets.
+    audio.unlock().then( () => audio.music.start( 'combat' ) );
     game.start();
     hud.banner( 'OPERATION START', 'KIVOTOS PLAZA', 'wave' );
   }
@@ -115,6 +123,9 @@ async function main() {
 
       // --- simulate -----------------------------------------------------
       if ( !paused ) game.update( dt, elapsed );
+
+      audio.setListener( engine.camera );
+      audio.update( dt );
 
       lighting.followFocus( game.cameraRig.smoothed );
 
@@ -168,6 +179,7 @@ async function main() {
     }
   };
   window.__game = game;
+  window.__audio = audio;
   window.__engine = engine;
   window.__diagnostics = () => ( {
     drawCalls: engine.renderer.info.render.calls,

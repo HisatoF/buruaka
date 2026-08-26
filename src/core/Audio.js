@@ -1420,3 +1420,561 @@ SYNTH.rankStamp = ( p ) => {
   p.hit( ag.gain, t, 0.1, 0.004, 0.26, 3 );
   p.chain( air, hp, ag ).connect( p.out );
 };
+
+// ---------------------------------------------------------------------------
+// AudioEngine
+// ---------------------------------------------------------------------------
+
+/** Names of every synthesised sound, for validation and tests. */
+export const SOUND_NAMES = Object.keys( SYNTH );
+
+const BUSES = [ 'sfx', 'ui', 'voice', 'music' ];
+
+/**
+ * Bus graph, spatialisation, voice limiting and ducking.
+ *
+ * Voice limiting is the part that matters most here. A squad shooter fires
+ * hundreds of triggers a second, and an unbounded Web Audio graph will happily
+ * accept all of them, clip into a wall of mud, and then stall the audio thread.
+ * Per-name caps with oldest-first stealing keep a firefight legible.
+ */
+export class AudioEngine {
+  /**
+   * @param {object} [opts]
+   * @param {BaseAudioContext} [opts.context]  Inject an OfflineAudioContext to render tests.
+   * @param {number} [opts.maxVoices=48]
+   */
+  constructor( opts = {} ) {
+    this.available = true;
+    this.isUnlocked = false;
+    this.maxVoices = opts.maxVoices ?? 48;
+
+    this._voices = [];                 // { name, node, endsAt }
+    this._perName = new Map();         // name -> count
+    this._limits = {
+      rifleShot: 5, smgShot: 6, pistolShot: 4, shotgunBlast: 3, sniperShot: 2,
+      impactConcrete: 6, impactMetal: 5, impactBody: 5, bulletWhizBy: 4,
+      footstepConcrete: 4, footstepGrass: 4, hurtGrunt: 3, criticalHit: 4,
+    };
+    this._defaultLimit = 4;
+
+    try {
+      const Ctx = opts.context
+        ? null
+        : ( globalThis.AudioContext ?? globalThis.webkitAudioContext );
+      if ( !opts.context && !Ctx ) throw new Error( 'Web Audio unavailable' );
+
+      this.ctx = opts.context ?? new Ctx( { latencyHint: 'interactive' } );
+      this._offline = !!opts.context;
+      this._buildGraph();
+      this.music = new MusicDirector( this );
+      this.isUnlocked = this.ctx.state === 'running' || this._offline;
+    } catch ( err ) {
+      // A silent no-op engine rather than a thrown error: a browser that
+      // blocks audio must not take the whole game down with it.
+      this.available = false;
+      this.ctx = null;
+      this.music = new NullMusic();
+      console.warn( '[audio] disabled:', err.message );
+    }
+
+    this._rngSeed = 1;
+    this._listenerPos = { x: 0, y: 0, z: 0 };
+  }
+
+  _buildGraph() {
+    const ctx = this.ctx;
+
+    // master -> limiter -> destination
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -6;
+    this.limiter.knee.value = 6;
+    this.limiter.ratio.value = 12;
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.22;
+    this.limiter.connect( ctx.destination );
+
+    this.master = ctx.createGain();
+    this.master.gain.value = 0.85;
+    this.master.connect( this.limiter );
+
+    this.bus = {};
+    for ( const name of BUSES ) {
+      const g = ctx.createGain();
+      g.gain.value = name === 'music' ? 0.5 : 0.9;
+      g.connect( this.master );
+      this.bus[ name ] = g;
+    }
+
+    // Shared reverb send. The impulse response is generated, not loaded.
+    this.reverb = ctx.createConvolver();
+    this.reverb.buffer = createImpulseResponse( ctx, { seconds: 1.6, decay: 2.6, damp: 0.55 } );
+    this.reverbReturn = ctx.createGain();
+    this.reverbReturn.gain.value = 0.30;
+    this.reverb.connect( this.reverbReturn ).connect( this.master );
+
+    this.reverbSend = ctx.createGain();
+    this.reverbSend.gain.value = 1;
+    this.reverbSend.connect( this.reverb );
+
+    // Early reflections: two short taps give a sense of a plaza with walls
+    // around it before the convolution tail arrives.
+    for ( const [ time, level ] of [ [ 0.019, 0.22 ], [ 0.037, 0.14 ] ] ) {
+      const d = ctx.createDelay( 0.2 );
+      d.delayTime.value = time;
+      const g = ctx.createGain();
+      g.gain.value = level;
+      this.reverbSend.connect( d ).connect( g ).connect( this.master );
+    }
+
+    if ( ctx.listener?.positionX ) {
+      ctx.listener.positionX.value = 0;
+      ctx.listener.positionY.value = 0;
+      ctx.listener.positionZ.value = 0;
+    }
+  }
+
+  /** Must be called from a user gesture; browsers block autoplay otherwise. */
+  async unlock() {
+    if ( !this.available || this._offline ) return this.isUnlocked;
+    if ( this.ctx.state === 'suspended' ) {
+      try { await this.ctx.resume(); } catch { /* ignore */ }
+    }
+    this.isUnlocked = this.ctx.state === 'running';
+    return this.isUnlocked;
+  }
+
+  /** @param {'master'|'sfx'|'ui'|'voice'|'music'} bus */
+  setVolume( bus, value ) {
+    if ( !this.available ) return;
+    const v = clamp( value, 0, 1 );
+    // Perceptual taper: linear gain sliders feel dead across their top half.
+    const g = v * v;
+    const node = bus === 'master' ? this.master : this.bus[ bus ];
+    if ( node ) node.gain.setTargetAtTime( g, this.ctx.currentTime, 0.02 );
+  }
+
+  /** Sidechain-style duck, used to clear space under a big event. */
+  duck( bus, amount = 0.4, ms = 400 ) {
+    if ( !this.available ) return;
+    const node = bus === 'master' ? this.master : this.bus[ bus ];
+    if ( !node ) return;
+    const now = this.ctx.currentTime;
+    const base = node.gain.value;
+    node.gain.cancelScheduledValues( now );
+    node.gain.setValueAtTime( base, now );
+    node.gain.linearRampToValueAtTime( base * ( 1 - amount ), now + 0.04 );
+    node.gain.linearRampToValueAtTime( base, now + ms / 1000 );
+  }
+
+  /** Refreshes the listener from a camera. Call once per frame. */
+  setListener( camera ) {
+    if ( !this.available || !camera ) return;
+    const l = this.ctx.listener;
+    const p = camera.position;
+    this._listenerPos = { x: p.x, y: p.y, z: p.z };
+
+    if ( l.positionX ) {
+      const t = this.ctx.currentTime;
+      l.positionX.setTargetAtTime( p.x, t, 0.02 );
+      l.positionY.setTargetAtTime( p.y, t, 0.02 );
+      l.positionZ.setTargetAtTime( p.z, t, 0.02 );
+
+      const e = camera.matrixWorld.elements;
+      // three's world matrix: -Z is forward for a camera, +Y is up.
+      l.forwardX.setTargetAtTime( -e[ 8 ], t, 0.02 );
+      l.forwardY.setTargetAtTime( -e[ 9 ], t, 0.02 );
+      l.forwardZ.setTargetAtTime( -e[ 10 ], t, 0.02 );
+      l.upX.setTargetAtTime( e[ 4 ], t, 0.02 );
+      l.upY.setTargetAtTime( e[ 5 ], t, 0.02 );
+      l.upZ.setTargetAtTime( e[ 6 ], t, 0.02 );
+    } else if ( l.setPosition ) {
+      l.setPosition( p.x, p.y, p.z );
+    }
+  }
+
+  _canPlay( name ) {
+    if ( this._voices.length >= this.maxVoices ) {
+      this._steal( null );
+      if ( this._voices.length >= this.maxVoices ) return false;
+    }
+    const limit = this._limits[ name ] ?? this._defaultLimit;
+    if ( ( this._perName.get( name ) ?? 0 ) >= limit ) {
+      this._steal( name );
+      return ( this._perName.get( name ) ?? 0 ) < limit;
+    }
+    return true;
+  }
+
+  /** Frees the oldest voice, optionally of a specific name. */
+  _steal( name ) {
+    let idx = -1;
+    for ( let i = 0; i < this._voices.length; i++ ) {
+      if ( name === null || this._voices[ i ].name === name ) { idx = i; break; }
+    }
+    if ( idx < 0 ) return;
+    const v = this._voices[ idx ];
+    try {
+      v.node.gain.cancelScheduledValues( this.ctx.currentTime );
+      v.node.gain.setTargetAtTime( 0, this.ctx.currentTime, 0.01 );
+    } catch { /* already released */ }
+    this._retire( idx );
+  }
+
+  _retire( idx ) {
+    const v = this._voices[ idx ];
+    if ( !v ) return;
+    this._voices.splice( idx, 1 );
+    const n = ( this._perName.get( v.name ) ?? 1 ) - 1;
+    if ( n <= 0 ) this._perName.delete( v.name );
+    else this._perName.set( v.name, n );
+  }
+
+  _reap() {
+    const now = this.ctx.currentTime;
+    for ( let i = this._voices.length - 1; i >= 0; i-- ) {
+      if ( this._voices[ i ].endsAt <= now ) {
+        try { this._voices[ i ].node.disconnect(); } catch { /* ignore */ }
+        this._retire( i );
+      }
+    }
+  }
+
+  /**
+   * Renders one sound into the graph.
+   * @param {string} name
+   * @param {object} [opts]
+   * @param {number} [opts.volume=1]
+   * @param {number} [opts.bus='sfx']
+   * @param {number} [opts.reverb=0.18]  Send level.
+   * @param {AudioNode} [opts.destination]  Overrides the bus (used by playAt).
+   * @returns {GainNode|null} the voice's output, or null when limited out.
+   */
+  play( name, opts = {} ) {
+    const synth = SYNTH[ name ];
+    if ( !this.available || !synth ) return null;
+    if ( !this._offline && this.ctx.state !== 'running' ) return null;
+
+    this._reap();
+    if ( !this._canPlay( name ) ) return null;
+
+    const out = this.ctx.createGain();
+    out.gain.value = opts.volume ?? 1;
+
+    const dest = opts.destination ?? this.bus[ opts.bus ?? 'sfx' ] ?? this.bus.sfx;
+    out.connect( dest );
+
+    const send = opts.reverb ?? 0.18;
+    if ( send > 0 ) {
+      const s = this.ctx.createGain();
+      s.gain.value = send;
+      out.connect( s ).connect( this.reverbSend );
+    }
+
+    const t0 = this.ctx.currentTime + ( opts.delay ?? 0 );
+    const rng = mulberry32( ( this._rngSeed = ( this._rngSeed * 1664525 + 1013904223 ) >>> 0 ) );
+    const patch = new Patch( this.ctx, out, t0, rng );
+
+    try {
+      synth( patch );
+    } catch ( err ) {
+      console.warn( `[audio] ${name} failed:`, err.message );
+      return null;
+    }
+
+    const dur = patch.duration ?? 1.2;
+    this._voices.push( { name, node: out, endsAt: t0 + dur + 0.4 } );
+    this._perName.set( name, ( this._perName.get( name ) ?? 0 ) + 1 );
+    return out;
+  }
+
+  /**
+   * Positional variant. Distance rolloff is linear rather than inverse so the
+   * far edge of the arena is quiet but not inaudible — an inverse curve makes
+   * a 30 m gunshot vanish entirely, which reads as a bug.
+   */
+  playAt( name, position, opts = {} ) {
+    if ( !this.available || !position ) return this.play( name, opts );
+
+    const panner = this.ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'linear';
+    panner.refDistance = 4;
+    panner.maxDistance = opts.maxDistance ?? 55;
+    panner.rolloffFactor = 1;
+    panner.connect( this.bus[ opts.bus ?? 'sfx' ] ?? this.bus.sfx );
+
+    if ( panner.positionX ) {
+      panner.positionX.value = position.x;
+      panner.positionY.value = position.y;
+      panner.positionZ.value = position.z;
+    } else if ( panner.setPosition ) {
+      panner.setPosition( position.x, position.y, position.z );
+    }
+
+    return this.play( name, { ...opts, destination: panner } );
+  }
+
+  /** Convenience passthroughs so gameplay code can ignore MusicDirector. */
+  setState( state ) { this.music.setState( state ); }
+  setIntensity( v ) { this.music.setIntensity( v ); }
+
+  /** Drives the music scheduler. Call once per frame. */
+  update( dt ) {
+    if ( !this.available ) return;
+    this._reap();
+    this.music.update( dt );
+  }
+
+  dispose() {
+    if ( !this.available ) return;
+    this.music.stop();
+    for ( let i = this._voices.length - 1; i >= 0; i-- ) {
+      try { this._voices[ i ].node.disconnect(); } catch { /* ignore */ }
+    }
+    this._voices.length = 0;
+    if ( !this._offline ) this.ctx.close?.();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MusicDirector
+// ---------------------------------------------------------------------------
+
+/**
+ * Generative adaptive score.
+ *
+ * Notes are scheduled ahead against `AudioContext.currentTime` with a lookahead
+ * window, never from requestAnimationFrame. Frame-driven audio timing drifts
+ * and stutters the moment the renderer misses a frame, which in a game is
+ * exactly when the music matters most.
+ */
+
+// A bright I–V–vi–IV in D major: the register the genre lives in.
+const PROGRESSIONS = {
+  menu:    [ [ 2, 'maj' ], [ 9, 'min' ], [ 7, 'maj' ], [ 4, 'min' ] ],
+  combat:  [ [ 2, 'maj' ], [ 9, 'maj' ], [ 11, 'min' ], [ 7, 'maj' ] ],
+  boss:    [ [ 2, 'min' ], [ 10, 'maj' ], [ 5, 'maj' ], [ 0, 'maj' ] ],
+  victory: [ [ 2, 'maj' ], [ 7, 'maj' ], [ 9, 'maj' ], [ 2, 'maj' ] ],
+  defeat:  [ [ 2, 'min' ], [ 0, 'maj' ], [ 10, 'maj' ], [ 5, 'maj' ] ],
+};
+
+const CHORD_TONES = { maj: [ 0, 4, 7, 11 ], min: [ 0, 3, 7, 10 ] };
+const TEMPO = { menu: 96, combat: 138, boss: 150, victory: 128, defeat: 76 };
+
+const midiToHz = ( n ) => 440 * Math.pow( 2, ( n - 69 ) / 12 );
+
+export class MusicDirector {
+  constructor( engine ) {
+    this.engine = engine;
+    this.ctx = engine.ctx;
+    this.out = engine.bus.music;
+
+    this.state = 'menu';
+    this.intensity = 0.4;
+    this.playing = false;
+
+    this._bpm = TEMPO.menu;
+    this._beat = 0;
+    this._nextNoteTime = 0;
+    this._lookahead = 0.12;
+    this._pendingState = null;
+    this._rng = mulberry32( 0x5eed );
+
+    this._layerGain = {};
+    for ( const layer of [ 'bass', 'pad', 'lead', 'drums' ] ) {
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      g.connect( this.out );
+      this._layerGain[ layer ] = g;
+    }
+  }
+
+  start( state = 'combat' ) {
+    if ( this.playing ) { this.setState( state ); return; }
+    this.playing = true;
+    this.state = state;
+    this._bpm = TEMPO[ state ] ?? 130;
+    this._beat = 0;
+    this._nextNoteTime = this.ctx.currentTime + 0.08;
+    this._applyLayers();
+  }
+
+  stop() {
+    this.playing = false;
+    for ( const g of Object.values( this._layerGain ) ) {
+      g.gain.setTargetAtTime( 0, this.ctx.currentTime, 0.2 );
+    }
+  }
+
+  /** Queued to the next bar so a transition never lands mid-phrase. */
+  setState( state ) {
+    if ( !PROGRESSIONS[ state ] || state === this.state ) return;
+    this._pendingState = state;
+    if ( !this.playing ) this.start( state );
+  }
+
+  setIntensity( v ) {
+    this.intensity = clamp( v, 0, 1 );
+    this._applyLayers();
+  }
+
+  _applyLayers() {
+    if ( !this.playing ) return;
+    const t = this.ctx.currentTime;
+    const i = this.intensity;
+
+    // Layers fade in across the intensity range rather than switching, so a
+    // rising fight thickens the arrangement instead of jump-cutting it.
+    const levels = {
+      pad: 0.55,
+      bass: 0.16 + clamp( i * 1.6, 0, 1 ) * 0.44,
+      drums: clamp( ( i - 0.18 ) * 1.8, 0, 1 ) * 0.52,
+      lead: clamp( ( i - 0.42 ) * 2.0, 0, 1 ) * 0.42,
+    };
+    if ( this.state === 'defeat' ) { levels.drums = 0; levels.lead = 0; }
+    if ( this.state === 'menu' ) { levels.drums *= 0.35; }
+
+    for ( const [ name, level ] of Object.entries( levels ) ) {
+      this._layerGain[ name ].gain.setTargetAtTime( level, t, 0.35 );
+    }
+  }
+
+  update() {
+    if ( !this.playing || !this.ctx ) return;
+
+    const spb = 60 / this._bpm;
+    while ( this._nextNoteTime < this.ctx.currentTime + this._lookahead ) {
+      this._scheduleBeat( this._beat, this._nextNoteTime, spb );
+      this._beat++;
+      this._nextNoteTime += spb / 2;      // scheduling in eighth notes
+
+      if ( this._beat % 8 === 0 && this._pendingState ) {
+        this.state = this._pendingState;
+        this._pendingState = null;
+        this._bpm = TEMPO[ this.state ] ?? 130;
+        this._applyLayers();
+      }
+    }
+  }
+
+  _scheduleBeat( step, time, spb ) {
+    const prog = PROGRESSIONS[ this.state ] ?? PROGRESSIONS.combat;
+    const bar = Math.floor( step / 8 ) % prog.length;
+    const [ root, quality ] = prog[ bar ];
+    const tones = CHORD_TONES[ quality ];
+    const eighth = step % 8;
+
+    // --- bass: root on the beat, fifth on the "and" of 3 -----------------
+    if ( eighth % 2 === 0 ) {
+      const n = 38 + root + ( eighth === 4 ? 7 : 0 );
+      this._voice( 'bass', midiToHz( n ), time, spb * 0.9, { type: 'sawtooth', cutoff: 420, gain: 0.5 } );
+    }
+
+    // --- pad: sustained chord on the bar ---------------------------------
+    if ( eighth === 0 ) {
+      for ( const tone of tones.slice( 0, 3 ) ) {
+        this._voice( 'pad', midiToHz( 62 + root + tone ), time, spb * 3.6,
+          { type: 'triangle', cutoff: 1800, gain: 0.16, attack: 0.12 } );
+      }
+    }
+
+    // --- drums -------------------------------------------------------------
+    if ( eighth === 0 || eighth === 4 ) this._kick( time );
+    if ( eighth === 2 || eighth === 6 ) this._snare( time );
+    if ( eighth % 1 === 0 ) this._hat( time, eighth % 2 === 0 ? 0.28 : 0.16 );
+
+    // --- lead: chord tones only, so it can never land outside the key ------
+    if ( this.intensity > 0.42 && ( eighth % 2 === 1 || this._rng() < 0.35 ) ) {
+      const tone = tones[ Math.floor( this._rng() * tones.length ) ];
+      const octave = this._rng() < 0.3 ? 12 : 0;
+      this._voice( 'lead', midiToHz( 74 + root + tone + octave ), time, spb * 0.42,
+        { type: 'square', cutoff: 3200, gain: 0.22, attack: 0.005 } );
+    }
+  }
+
+  _voice( layer, freq, time, dur, { type = 'sawtooth', cutoff = 1200, gain = 0.3, attack = 0.01 } ) {
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.value = freq;
+
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = cutoff;
+    filt.Q.value = 0.9;
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime( 0, time );
+    g.gain.linearRampToValueAtTime( gain, time + attack );
+    g.gain.setTargetAtTime( 0, time + dur * 0.55, dur * 0.28 );
+
+    osc.connect( filt ).connect( g ).connect( this._layerGain[ layer ] );
+    osc.start( time );
+    osc.stop( time + dur + 0.25 );
+    osc.onended = () => { try { osc.disconnect(); filt.disconnect(); g.disconnect(); } catch {} };
+  }
+
+  _kick( time ) {
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime( 132, time );
+    osc.frequency.exponentialRampToValueAtTime( 44, time + 0.09 );
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime( 0.85, time );
+    g.gain.exponentialRampToValueAtTime( 0.001, time + 0.24 );
+
+    osc.connect( g ).connect( this._layerGain.drums );
+    osc.start( time );
+    osc.stop( time + 0.3 );
+    osc.onended = () => { try { osc.disconnect(); g.disconnect(); } catch {} };
+  }
+
+  _snare( time ) {
+    const ctx = this.ctx;
+    const len = Math.floor( ctx.sampleRate * 0.18 );
+    const buf = ctx.createBuffer( 1, len, ctx.sampleRate );
+    const d = buf.getChannelData( 0 );
+    for ( let i = 0; i < len; i++ ) d[ i ] = ( Math.random() * 2 - 1 ) * Math.pow( 1 - i / len, 2.6 );
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1900;
+    bp.Q.value = 0.8;
+    const g = ctx.createGain();
+    g.gain.value = 0.42;
+
+    src.connect( bp ).connect( g ).connect( this._layerGain.drums );
+    src.start( time );
+    src.onended = () => { try { src.disconnect(); bp.disconnect(); g.disconnect(); } catch {} };
+  }
+
+  _hat( time, level ) {
+    const ctx = this.ctx;
+    const len = Math.floor( ctx.sampleRate * 0.05 );
+    const buf = ctx.createBuffer( 1, len, ctx.sampleRate );
+    const d = buf.getChannelData( 0 );
+    for ( let i = 0; i < len; i++ ) d[ i ] = ( Math.random() * 2 - 1 ) * Math.pow( 1 - i / len, 5 );
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 7200;
+    const g = ctx.createGain();
+    g.gain.value = level * 0.3;
+
+    src.connect( hp ).connect( g ).connect( this._layerGain.drums );
+    src.start( time );
+    src.onended = () => { try { src.disconnect(); hp.disconnect(); g.disconnect(); } catch {} };
+  }
+}
+
+/** Stand-in used when Web Audio is unavailable, so callers need no guards. */
+class NullMusic {
+  start() {} stop() {} setState() {} setIntensity() {} update() {}
+}
