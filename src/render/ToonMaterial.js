@@ -68,6 +68,11 @@ const fragmentShader = /* glsl */ `
 uniform vec3  uColor;
 uniform sampler2D uMap;
 uniform float uHasMap;
+uniform sampler2D uNormalMap;
+uniform float uHasNormalMap;
+uniform float uNormalScale;
+uniform vec2  uUvScale;
+uniform vec2  uUvOffset;
 uniform float uAlphaTest;
 uniform float uOpacity;
 
@@ -121,9 +126,35 @@ float bandStep( float x, float edge, float soft ) {
   return smoothstep( edge - soft, edge + soft, x );
 }
 
+/**
+ * Cotangent frame from screen-space derivatives (Mikkelsen).
+ *
+ * Deriving the tangent basis in the fragment shader avoids having to generate
+ * and store tangent attributes for every piece of level geometry, which for a
+ * world built procedurally at load time would mean an extra pass over every
+ * mesh for a basis that is only needed on the handful of surfaces that carry
+ * a normal map.
+ */
+mat3 cotangentFrame( vec3 N, vec3 p, vec2 uv ) {
+  vec3 dp1 = dFdx( p );
+  vec3 dp2 = dFdy( p );
+  vec2 duv1 = dFdx( uv );
+  vec2 duv2 = dFdy( uv );
+
+  vec3 dp2perp = cross( dp2, N );
+  vec3 dp1perp = cross( N, dp1 );
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  float invmax = inversesqrt( max( dot( T, T ), dot( B, B ) ) );
+  return mat3( T * invmax, B * invmax, N );
+}
+
 void main() {
+  vec2 uv = vUv * uUvScale + uUvOffset;
+
   vec4 texel = vec4( 1.0 );
-  if ( uHasMap > 0.5 ) texel = texture2D( uMap, vUv );
+  if ( uHasMap > 0.5 ) texel = texture2D( uMap, uv );
   vec3 base = uColor * texel.rgb;
   #ifdef USE_VERTEX_TINT
     base *= vTint;
@@ -135,6 +166,12 @@ void main() {
   if ( !gl_FrontFacing ) N = -N;
   vec3 V = normalize( vViewPosition );
   vec3 Nw = normalize( vNormalWorld );
+
+  if ( uHasNormalMap > 0.5 ) {
+    vec3 mapN = texture2D( uNormalMap, uv ).xyz * 2.0 - 1.0;
+    mapN.xy *= uNormalScale;
+    N = normalize( cotangentFrame( N, -vViewPosition, uv ) * mapN );
+  }
 
   // ---- key light -----------------------------------------------------
   vec3 L = vec3( 0.0, 0.0, 1.0 );
@@ -188,7 +225,7 @@ void main() {
     // the head. Driving it from skinned object-space Y (mode 2) keeps it at a
     // fixed height on the hair regardless of how each strand is unwrapped;
     // driving it from UV.y (mode 1) suits cylindrical parts like sleeves.
-    float coord = uSpecBand > 1.5 ? vObjPos.y : vUv.y;
+    float coord = uSpecBand > 1.5 ? vObjPos.y : uv.y;
     float band = 1.0 - smoothstep( 0.0, uSpecBandWidth, abs( coord - uSpecBandPos ) );
     if ( uSpecBandRepeat > 0.0 ) {
       band = max( band, ( 1.0 - smoothstep( 0.0, uSpecBandWidth * 0.6, abs( coord - uSpecBandPos + uSpecBandRepeat ) ) ) * 0.55 );
@@ -218,6 +255,10 @@ void main() {
 export const TOON_DEFAULTS = {
   color: 0xffffff,
   map: null,
+  normalMap: null,
+  normalScale: 1,
+  uvScale: [ 1, 1 ],
+  uvOffset: [ 0, 0 ],
   opacity: 1,
   alphaTest: 0,
   shadowTint: 0x9c94c4,
@@ -276,6 +317,11 @@ export function createToonMaterial( options = {} ) {
         uColor: { value: c( o.color ) },
         uMap: { value: null },
         uHasMap: { value: 0 },
+        uNormalMap: { value: null },
+        uHasNormalMap: { value: 0 },
+        uNormalScale: { value: o.normalScale },
+        uUvScale: { value: new THREE.Vector2( o.uvScale[ 0 ], o.uvScale[ 1 ] ) },
+        uUvOffset: { value: new THREE.Vector2( o.uvOffset[ 0 ], o.uvOffset[ 1 ] ) },
         uAlphaTest: { value: o.alphaTest },
         uOpacity: { value: o.opacity },
         uShadowTint: { value: mul( o.shadowTint ) },
@@ -315,6 +361,13 @@ export function createToonMaterial( options = {} ) {
     material.uniforms.uMap.value = o.map;
     material.uniforms.uHasMap.value = 1;
   }
+  if ( o.normalMap ) {
+    material.uniforms.uNormalMap.value = o.normalMap;
+    material.uniforms.uHasNormalMap.value = 1;
+  }
+  // UniformsUtils.merge clones Vector2s too, so restore the requested values.
+  material.uniforms.uUvScale.value.set( o.uvScale[ 0 ], o.uvScale[ 1 ] );
+  material.uniforms.uUvOffset.value.set( o.uvOffset[ 0 ], o.uvOffset[ 1 ] );
 
   material.userData.isKivotosToon = true;
 

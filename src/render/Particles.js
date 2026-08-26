@@ -232,7 +232,7 @@ void main() {
     // A FILLED astroid ( |x|^e + |y|^e <= 1, e < 1 ), not a sum of thin
     // spikes. Thin spikes vanish under a wide bloom kernel; a bold concave
     // four-point silhouette survives it, which is the whole point of the
-    // shape. `aParam` picks how pointy: 5 is a fat star, 10 a needle.
+    // shape. aParam picks how pointy: 5 is a fat star, 10 a needle.
     float e = clamp( 0.80 - vParam * 0.055, 0.28, 0.62 );
     float sx = pow( abs( q.x ), e ) + pow( abs( q.y ), e );
     float star = 1.0 - smoothstep( 0.84, 1.06, sx );

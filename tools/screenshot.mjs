@@ -118,6 +118,17 @@ try {
   errors.push( `READY TIMEOUT: ${e.message}` );
 }
 
+// `--play N` starts the mission and fast-forwards the simulation N seconds
+// before capturing, so shots show a live firefight rather than a menu.
+if ( ready && args.play ) {
+  try {
+    await page.evaluate( ( n ) => window.__startMission?.( n ), Number( args.play ) );
+    await page.waitForTimeout( 500 );
+  } catch ( e ) {
+    errors.push( `PLAY: ${e.message}` );
+  }
+}
+
 const shots = ( args.shots ?? '' ).split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
 const captured = [];
 
