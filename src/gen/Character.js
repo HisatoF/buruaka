@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { createToonMaterial, createOutlineMaterial, computeSmoothNormals, paintGeometry } from '../render/ToonMaterial.js';
 import { buildSkeleton, skinGeometry, skinRigid, SKIN_SEGMENTS } from './Rig.js';
 import { buildHair, HEAD } from './Hair.js';
+import { buildWeapon } from './Weapon.js';
+import { SpringBoneChain, makeBodyColliders, updateBodyColliders } from '../physics/SpringBone.js';
+import { Animator } from '../anim/Animator.js';
 import { makeFaceAtlas, makeHeadSkin } from './Face.js';
 import {
   profileTube, limb, roundedBox, shapeHead, planarFrontUV, faceCard,
@@ -252,16 +255,20 @@ function buildOutfit( design ) {
   }
 
   // --- sleeves ---------------------------------------------------------
+  // Returned separately so they can be skinned against the arm chain alone.
+  // Solved against the full body they pick up chest and clavicle influence
+  // and get stretched into a flat slab the moment the arm swings forward.
+  const sleeves = { '-1': [], '1': [] };
   for ( const sx of [ -1, 1 ] ) {
-    const shoulder = V( sx * 0.110, 1.300, 0 );
-    const cuff = V( sx * 0.216, 1.128, 0 );
+    const shoulder = V( sx * 0.128, 1.288, 0 );
+    const cuff = V( sx * 0.224, 1.112, 0 );
     const sleeve = limb( shoulder, cuff, [
-      { t: 0, r: 0.086 }, { t: 0.22, r: 0.078 }, { t: 0.62, r: 0.060 }, { t: 1, r: 0.049 },
-    ], { radial: 16, capTop: true, capBottom: false, capRound: 0.55 } );
-    parts.push( paintGeometry( sleeve, o.jacket ?? o.shirt ) );
+      { t: 0, r: 0.072 }, { t: 0.24, r: 0.066 }, { t: 0.64, r: 0.054 }, { t: 1, r: 0.047 },
+    ], { radial: 16, capTop: false, capBottom: true, capRound: 0.75 } );
+    sleeves[ sx ].push( paintGeometry( sleeve, o.jacket ?? o.shirt ) );
 
-    const trim = limb( cuff, V( sx * 0.222, 1.118, 0 ), [ { t: 0, r: 0.051 }, { t: 1, r: 0.049 } ], { radial: 16, capTop: false, capBottom: false } );
-    parts.push( paintGeometry( trim, o.cuff ?? o.shirt ) );
+    const trim = limb( cuff, V( sx * 0.234, 1.098, 0 ), [ { t: 0, r: 0.049 }, { t: 1, r: 0.047 } ], { radial: 16, capTop: false, capBottom: false } );
+    sleeves[ sx ].push( paintGeometry( trim, o.cuff ?? o.shirt ) );
   }
 
   // --- lower body ------------------------------------------------------
@@ -317,7 +324,11 @@ function buildOutfit( design ) {
     parts.push( paintGeometry( sole, o.sole ?? 0xf2f4f8 ) );
   }
 
-  return mergeGeometries( parts );
+  return {
+    core: mergeGeometries( parts ),
+    sleeveL: mergeGeometries( sleeves[ '-1' ] ),
+    sleeveR: mergeGeometries( sleeves[ '1' ] ),
+  };
 }
 
 /* ---------------------------------------------------------------------- */
@@ -533,18 +544,35 @@ export class Character {
     this.outlineMaterial = outlineMat;
 
     // --- body + outfit ---------------------------------------------------
-    const bodyGeo = computeSmoothNormals( mergeGeometries( [ buildBody( design ), buildOutfit( design ) ] ) );
+    const outfit = buildOutfit( design );
+    const bodyGeo = computeSmoothNormals( mergeGeometries( [ buildBody( design ), outfit.core ] ) );
     skinGeometry( bodyGeo, order, { segments: allSegments, falloff: 2.6 } );
+
+    // Sleeves ride the arm chain only, weighted hard toward the upper arm.
+    for ( const side of [ 'L', 'R' ] ) {
+      const geo = computeSmoothNormals( outfit[ `sleeve${side}` ] );
+      skinGeometry( geo, order, {
+        segments: allSegments,
+        only: [ `shoulder${side}`, `upperArm${side}`, `lowerArm${side}` ],
+        bias: { [ `upperArm${side}` ]: 3.2, [ `shoulder${side}` ]: 0.5, [ `lowerArm${side}` ]: 0.7 },
+        falloff: 2.2,
+      } );
+      outfit[ `sleeve${side}Skinned` ] = geo;
+    }
     const bodyMat = createToonMaterial( {
       color: 0xffffff,
       vertexTint: true,
-      specStrength: 0.16,
-      specGloss: 30,
+      specStrength: 0.10,
+      specGloss: 22,
       rimStrength: 0.45,
       rimColor: design.rimColor ?? PALETTE.accentCyan,
     } );
     this.bodyMaterial = bodyMat;
-    this._addSkinned( 'body', bodyGeo, bodyMat, outlineMat, skeleton );
+    this._addSkinned(
+      'body',
+      mergeGeometries( [ bodyGeo, outfit.sleeveLSkinned, outfit.sleeveRSkinned ] ),
+      bodyMat, outlineMat, skeleton
+    );
 
     // --- head ------------------------------------------------------------
     const headSkinTex = makeHeadSkin( {
@@ -620,8 +648,37 @@ export class Character {
     byName.head.add( halo );
     this.halo = halo;
 
-    // --- spring chains ----------------------------------------------------
-    this.hairChains = hair.chains.map( ( names ) => names.map( ( n ) => byName[ n ] ).filter( Boolean ) );
+    // --- weapon -----------------------------------------------------------
+    // The socket is parented to the character root rather than to a hand bone:
+    // the animator drives the weapon's transform from the aim direction and
+    // then IKs both hands onto it, which is the only way to keep a two-handed
+    // grip stable across different weapons and target elevations.
+    this.weaponSocket = new THREE.Object3D();
+    this.weaponSocket.name = 'weaponSocket';
+    root.add( this.weaponSocket );
+
+    if ( design.weapon ) {
+      this.weapon = buildWeapon( design.weapon, { rimColor: design.rimColor } );
+      this.weaponSocket.add( this.weapon.group );
+      this.stats = this.weapon.stats;
+    }
+
+    // --- secondary motion ---------------------------------------------------
+    this.bodyColliders = makeBodyColliders( byName );
+    this.springChains = hair.chains.map( ( names ) => {
+      const chainBones = names.map( ( n ) => byName[ n ] ).filter( Boolean );
+      return new SpringBoneChain( chainBones, {
+        stiffness: 0.13,
+        damping: 0.12,
+        gravity: 0.75,
+        drag: 0.03,
+        maxAngle: 1.15,
+        radius: 0.045,
+        colliders: this.bodyColliders,
+      } );
+    } );
+
+    this.animator = new Animator( this );
 
     if ( design.scale && design.scale !== 1 ) root.scale.setScalar( design.scale );
 
@@ -722,12 +779,20 @@ export class Character {
 
   update( dt, elapsed ) {
     this.faceRig?.update( dt );
+
+    // Order matters: pose the skeleton, refresh the collider positions from
+    // the posed bones, then run the springs against them. Simulating hair
+    // against last frame's collider positions makes it lag through the head
+    // on fast turns.
+    this.animator?.update( dt, elapsed );
+    updateBodyColliders( this.bodyColliders );
+    for ( const chain of this.springChains ) chain.update( dt );
+
     if ( this.halo ) {
       // A slow bob and counter-rotation. Static halos read as props.
       this.halo.position.y = HEAD.top - 1.392 + 0.115 + Math.sin( elapsed * 1.7 ) * 0.006;
       this.halo.rotation.y = elapsed * 0.35;
     }
-    for ( const chain of this.springChains ) chain.update?.( dt );
   }
 
   setQuality( level ) {
@@ -741,6 +806,7 @@ export class Character {
 
   onResize( w, h, pr ) {
     this.outlineMaterial.uniforms.uResolution.value.set( w * pr, h * pr );
+    this.weapon?.onResize( w, h, pr );
   }
 
   dispose() {
@@ -754,6 +820,7 @@ export class Character {
     this.faceMaterial?.dispose();
     this.faceAtlas?.texture?.dispose();
     this.outlineMaterial.dispose();
+    this.weapon?.dispose();
   }
 }
 

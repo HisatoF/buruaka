@@ -31,6 +31,15 @@ roster.forEach( ( key, i ) => {
   const c = buildCharacter( key );
   c.root.position.set( ( i - ( roster.length - 1 ) / 2 ) * 0.95, 0, 0 );
   engine.scene.add( c.root );
+  // Alternate between an idle stance and an aiming run so both animation
+  // layers are visible in one capture.
+  if ( i % 2 === 0 ) {
+    c.animator.setAim( new THREE.Vector3( c.root.position.x, 1.25, 8 ), 1 );
+    c.animator.setSpeed( 0 );
+  } else {
+    c.animator.setSpeed( 0.85 );
+    c.animator.setAim( null, 0 );
+  }
   chars.push( c );
 } );
 
