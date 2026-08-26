@@ -404,7 +404,7 @@ export class Game {
       s.squad.push( {
         id: u.id,
         name: u.name,
-        role: u.stats.kind === 'sniper' ? 'SPECIAL' : 'STRIKER',
+        role: ROLE_BY_WEAPON[ u.stats.kind ] ?? 'STRIKER',
         color: u.color,
         hp: Math.round( u.hp ),
         maxHp: Math.round( u.maxHp ),
@@ -532,6 +532,14 @@ export class Game {
 }
 
 const _UP = new THREE.Vector3( 0, 1, 0 );
+
+/** Weapon archetype -> the role label shown on the roster card. */
+const ROLE_BY_WEAPON = {
+  rifle: 'STRIKER',
+  smg: 'ASSAULT',
+  shotgun: 'BREACH',
+  sniper: 'SPECIAL',
+};
 
 function formatTime( seconds ) {
   const m = Math.floor( seconds / 60 );

@@ -44,7 +44,15 @@ export class Unit {
     this.stats = this.character.stats ?? { damage: 8, rpm: 500, spread: 0.03, range: 18, mag: 30, reload: 2, speed: 180 };
 
     this.name = this.character.design.name ?? 'UNIT';
-    this.color = cfg.color ?? ( this.team === TEAM.SQUAD ? '#7fd6ff' : '#ff5d6c' );
+
+    // The HUD keys its procedural portraits on this colour, so every squad
+    // member sharing one accent made all four roster chips render identically.
+    // Taking it from the character's own hair makes each card recognisable at
+    // a glance, which is the whole point of a roster.
+    this.color = cfg.color ?? hexToCss(
+      this.character.design.hair?.color ?? ( this.team === TEAM.SQUAD ? 0x7fd6ff : 0xff5d6c )
+    );
+    this.accent = hexToCss( this.character.design.eyes?.color ?? 0x7fd6ff );
 
     const scale = this.character.design.scale ?? 1;
     this.maxHp = cfg.maxHp ?? ( this.team === TEAM.SQUAD ? 2200 : 620 * scale );
@@ -393,3 +401,8 @@ export class Unit {
 }
 
 const _ZERO = new THREE.Vector3();
+
+/** `0x8fb4e8` -> `'#8fb4e8'`, for handing engine colours to CSS. */
+function hexToCss( hex ) {
+  return typeof hex === 'string' ? hex : '#' + ( hex & 0xffffff ).toString( 16 ).padStart( 6, '0' );
+}

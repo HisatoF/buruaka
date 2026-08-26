@@ -148,15 +148,68 @@ async function main() {
   /* --- capture / diagnostics hooks ---------------------------------- */
 
   const framings = {
-    game:     null,                                   // live camera
+    game:     null,                                   // live gameplay camera
     overview: { pos: [ 0, 26, 34 ], look: [ 0, 0, -2 ], fov: 40 },
-    squad:    { pos: [ 2, 2.2, 24 ], look: [ 0, 1.1, 14 ], fov: 34 },
-    action:   { pos: [ -6, 3.2, 6 ], look: [ 0, 1.1, -6 ], fov: 38 },
     street:   { pos: [ 0, 1.8, 16 ], look: [ 0, 1.4, -12 ], fov: 42 },
+    // Framings that follow the fight, resolved at capture time.
+    firefight: 'nearestContact',
+    portrait:  'squadCloseup',
+    overShoulder: 'behindLead',
   };
 
+  /** Resolves the dynamic framings against the current simulation state. */
+  function dynamicFraming( kind ) {
+    const alive = game.squad.filter( ( u ) => !u.dead );
+    if ( !alive.length ) return null;
+
+    const centre = new THREE.Vector3();
+    for ( const u of alive ) centre.add( u.position );
+    centre.divideScalar( alive.length );
+
+    if ( kind === 'squadCloseup' ) {
+      const u = alive[ 0 ];
+      const f = new THREE.Vector3( Math.sin( u.character.root.rotation.y ), 0, Math.cos( u.character.root.rotation.y ) );
+      return {
+        pos: [ u.position.x + f.x * 1.5 + 0.5, 1.52, u.position.z + f.z * 1.5 ],
+        look: [ u.position.x, 1.44, u.position.z ],
+        fov: 26,
+      };
+    }
+
+    let nearest = null, d = Infinity;
+    for ( const h of game.hostiles ) {
+      if ( h.dead ) continue;
+      const dd = h.position.distanceTo( centre );
+      if ( dd < d ) { d = dd; nearest = h; }
+    }
+
+    if ( kind === 'behindLead' ) {
+      const u = alive[ 0 ];
+      const t = nearest ? nearest.position : new THREE.Vector3( centre.x, 0, centre.z - 12 );
+      const back = new THREE.Vector3().subVectors( u.position, t ).setY( 0 ).normalize();
+      return {
+        pos: [ u.position.x + back.x * 2.6 + 0.8, 1.95, u.position.z + back.z * 2.6 ],
+        look: [ t.x, 1.2, t.z ],
+        fov: 40,
+      };
+    }
+
+    // nearestContact: side-on view of the closest engagement.
+    const mid = nearest ? centre.clone().lerp( nearest.position, 0.5 ) : centre;
+    const axis = nearest
+      ? new THREE.Vector3().subVectors( nearest.position, centre ).setY( 0 ).normalize()
+      : new THREE.Vector3( 0, 0, -1 );
+    const side = new THREE.Vector3( axis.z, 0, -axis.x );
+    return {
+      pos: [ mid.x + side.x * 9 + axis.x * -3, 3.4, mid.z + side.z * 9 + axis.z * -3 ],
+      look: [ mid.x, 1.1, mid.z ],
+      fov: 40,
+    };
+  }
+
   window.__capture = ( name ) => {
-    const f = framings[ name ];
+    let f = framings[ name ];
+    if ( typeof f === 'string' ) f = dynamicFraming( f );
     if ( !f ) return;
     game.cameraRig.enabled = false;
     engine.camera.position.set( ...f.pos );
