@@ -170,9 +170,9 @@ async function main() {
       const u = alive[ 0 ];
       const f = new THREE.Vector3( Math.sin( u.character.root.rotation.y ), 0, Math.cos( u.character.root.rotation.y ) );
       return {
-        pos: [ u.position.x + f.x * 1.5 + 0.5, 1.52, u.position.z + f.z * 1.5 ],
-        look: [ u.position.x, 1.44, u.position.z ],
-        fov: 26,
+        pos: [ u.position.x + f.x * 2.6 + 0.75, 1.56, u.position.z + f.z * 2.6 ],
+        look: [ u.position.x, 1.47, u.position.z ],
+        fov: 15,
       };
     }
 

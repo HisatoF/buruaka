@@ -463,13 +463,19 @@ export class Animator {
 
     b.handR.updateMatrixWorld( true );
     b.handR.getWorldPosition( _a1 );
-    socket.position.copy( _a1 );
-    socket.parent.worldToLocal( socket.position );
-    socket.position.y -= 0.02;
 
     // Muzzle down-forward, roughly parallel to the thigh.
-    _euler.set( -1.15, 0.25, 0, 'YXZ' );
+    _euler.set( -1.05, 0.22, 0, 'YXZ' );
     socket.quaternion.setFromEuler( _euler );
+
+    // Place the *grip*, not the weapon's origin. The origin sits at the
+    // receiver's centre, so anchoring it to the hand left the gun floating a
+    // grip-length clear of the fist.
+    socket.position.set( 0, 0, 0 );
+    socket.updateMatrixWorld( true );
+    _a2.copy( this.gripMain ).applyMatrix4( socket.matrixWorld );
+    socket.position.copy( _a1 ).sub( _a2 );
+    socket.parent.worldToLocal( socket.position );
     socket.updateMatrixWorld( true );
   }
 

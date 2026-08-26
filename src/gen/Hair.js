@@ -60,7 +60,7 @@ export function hairShell( headGeo, { thickness = 0.014, crown = 0.030, hairline
  * as they descend, so the fringe splays instead of hanging as a curtain. A
  * per-strand length jitter is what stops it reading as a comb.
  */
-function bangs( { count = 15, spread = 0.104, drop = 0.052, width = 0.019, parting = 0.15, sweep = 0.30, seed = 1 } = {} ) {
+function bangs( { count = 15, spread = 0.104, drop = 0.026, width = 0.019, parting = 0.15, sweep = 0.30, seed = 1 } = {} ) {
   let s = seed >>> 0;
   const rnd = () => ( ( s = ( s * 1664525 + 1013904223 ) >>> 0 ) / 4294967296 );
 
@@ -311,7 +311,7 @@ export const HAIR_STYLES = {
   bob( o = {} ) {
     return {
       staticGeos: [
-        ...bangs( { count: 13, drop: 0.088, width: 0.033, ...o.bangs } ),
+        ...bangs( { count: 13, drop: 0.044, width: 0.033, ...o.bangs } ),
         ...sideLocks( { length: 0.155, width: 0.048, flare: 0.028, ...o.sideLocks } ),
         ...backVolume( { drop: 0.150, count: 9 } ),
       ],
@@ -324,7 +324,7 @@ export const HAIR_STYLES = {
   short( o = {} ) {
     return {
       staticGeos: [
-        ...bangs( { count: 9, drop: 0.052, width: 0.026, sweep: 0.6, ...o.bangs } ),
+        ...bangs( { count: 9, drop: 0.030, width: 0.026, sweep: 0.6, ...o.bangs } ),
         ...backVolume( { drop: 0.030, count: 7 } ),
       ],
       dynamicGeos: [],

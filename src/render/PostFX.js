@@ -19,15 +19,15 @@ const GradeShader = {
   uniforms: {
     tDiffuse: { value: null },
     uExposure: { value: 1.0 },
-    uContrast: { value: 1.045 },
-    uSaturation: { value: 1.10 },
+    uContrast: { value: 1.075 },
+    uSaturation: { value: 1.20 },
     uLift: { value: new THREE.Color( 0x0a1120 ) },
     uGain: { value: new THREE.Color( 0xfff4e2 ) },
     uSplitStrength: { value: 0.35 },
     uVignette: { value: 0.30 },
     uVignetteSoft: { value: 0.62 },
     uAberration: { value: 0.0008 },
-    uGrain: { value: 0.011 },
+    uGrain: { value: 0.006 },
     uTime: { value: 0 },
     uResolution: { value: new THREE.Vector2( 1920, 1080 ) },
     uHighlightRolloff: { value: 0.82 },
@@ -53,8 +53,13 @@ const GradeShader = {
 
     float luma( vec3 c ) { return dot( c, vec3( 0.2126, 0.7152, 0.0722 ) ); }
 
+    // An integer-mix hash rather than fract(sin(...)): the sine version is
+    // periodic at screen scale and lays a visible ordered grid across smooth
+    // ramps, which on skin reads as dirt rather than as grain.
     float hash( vec2 p ) {
-      return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453123 );
+      vec3 q = fract( vec3( p.xyx ) * 0.1031 );
+      q += dot( q, q.yzx + 33.33 );
+      return fract( ( q.x + q.y ) * q.z );
     }
 
     void main() {
@@ -139,8 +144,8 @@ export class PostFX {
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2( size.x, size.y ),
-      options.bloomStrength ?? 0.80,
-      options.bloomRadius ?? 0.62,
+      options.bloomStrength ?? 0.42,
+      options.bloomRadius ?? 0.34,
       options.bloomThreshold ?? 1.06
     );
     this.composer.addPass( this.bloomPass );
@@ -177,7 +182,7 @@ export class PostFX {
     this.bloomPass.enabled = level >= 1;
     this.smaaPass.enabled = level >= 1;
     this.grade.uAberration.value = level >= 2 ? 0.0008 : 0;
-    this.grade.uGrain.value = level >= 1 ? 0.011 : 0;
+    this.grade.uGrain.value = level >= 1 ? 0.006 : 0;
   }
 
   render( dt, elapsed ) {

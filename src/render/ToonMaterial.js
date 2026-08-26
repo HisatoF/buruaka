@@ -272,12 +272,12 @@ export const TOON_DEFAULTS = {
   shadowStrength: 1,
   rimColor: 0xbfe8ff,
   rimPower: 3.2,
-  rimStrength: 0.42,
+  rimStrength: 0.24,
   rimBias: 0.25,
   rimBacklight: 0.35,
   specColor: 0xffffff,
   specGloss: 44,
-  specStrength: 0.30,
+  specStrength: 0.12,
   specStep: 0.42,
   specSoft: 0.12,
   specBand: 0,
@@ -459,8 +459,8 @@ void main() {
 `;
 
 export function createOutlineMaterial( {
-  color = 0x2b2138, thickness = 0.0032, minPixels = 1.15,
-  vertexTint = false, tintMix = 0.75,
+  color = 0x2b2138, thickness = 0.0060, minPixels = 2.2,
+  vertexTint = false, tintMix = 0.42,
 } = {} ) {
   return new THREE.ShaderMaterial( {
     defines: vertexTint ? { USE_VERTEX_TINT: '' } : {},

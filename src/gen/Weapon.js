@@ -144,6 +144,7 @@ export function buildWeapon( kind, opts = {} ) {
   const material = createToonMaterial( {
     color: 0xffffff,
     vertexTint: true,
+    shadowStrength: 0,
     // Gunmetal wants a tight, bright band — it is the only hard surface on a
     // character otherwise made of cloth and skin.
     specStrength: 0.55,
@@ -155,7 +156,7 @@ export function buildWeapon( kind, opts = {} ) {
   } );
 
   const outlineMaterial = createOutlineMaterial( {
-    color: 0x1c2130, thickness: 0.0026, vertexTint: true, tintMix: 0.5,
+    color: 0x1c2130, thickness: 0.0044, vertexTint: true, tintMix: 0.40,
   } );
 
   const group = new THREE.Group();

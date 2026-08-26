@@ -37,8 +37,8 @@ export const LEVEL_COLORS = {
   roof: 0x44507a,
   window: 0x8fd0f0,
   crate: 0xd2a463,
-  container: 0x3f8fa8,
-  containerAlt: 0xc25550,
+  container: 0x4d93a6,
+  containerAlt: 0xc06a62,
   barrier: 0xe8e4dc,
   barrierStripe: 0xffc23d,
   planter: 0xb4a08c,
@@ -236,7 +236,7 @@ const COVER_LAYOUT = [
 
   // --- right flank ---
   { kind: 'container', x: 11.5, z: -4, ry: -0.08, len: 6.5, color: LEVEL_COLORS.containerAlt },
-  { kind: 'container', x: 14, z: 6, ry: Math.PI / 2 + 0.12, len: 5.5, color: LEVEL_COLORS.container },
+  { kind: 'container', x: 14, z: 6, ry: Math.PI / 2 + 0.12, len: 5.5, color: 0x6f8fbf },
   { kind: 'planter', x: 7.5, z: 8.5, ry: 0, w: 3.0 },
   { kind: 'crate', x: 8.4, z: -7.5, size: 1.3 },
   { kind: 'crate', x: 9.6, z: -8.4, size: 1.0 },
@@ -244,7 +244,7 @@ const COVER_LAYOUT = [
 
   // --- mid band, the contested ground ---
   { kind: 'container', x: -4.6, z: -8.5, ry: Math.PI / 2 - 0.22, len: 5.0, color: LEVEL_COLORS.container },
-  { kind: 'container', x: 5.0, z: -9.5, ry: Math.PI / 2 + 0.18, len: 5.0, color: LEVEL_COLORS.containerAlt },
+  { kind: 'container', x: 5.0, z: -9.5, ry: Math.PI / 2 + 0.18, len: 5.0, color: 0xc8a558 },
   { kind: 'crate', x: -2.4, z: -5.4, size: 1.2 },
   { kind: 'crate', x: -3.3, z: -6.2, size: 0.95 },
   { kind: 'crate', x: 2.6, z: -5.8, size: 1.25 },
@@ -296,7 +296,7 @@ export class Level {
     this._geometries = [];
 
     this.outlineMaterial = createOutlineMaterial( {
-      color: 0x39405c, thickness: 0.0024, vertexTint: true, tintMix: 0.55,
+      color: 0x39405c, thickness: 0.0042, vertexTint: true, tintMix: 0.45,
     } );
 
     this._buildGround( opts.quality ?? 2 );
@@ -499,15 +499,27 @@ export class Level {
       }
     }
 
-    // Lampposts along the road.
+    // Lampposts along the street, skipping any that would grow out of a
+    // cover prop. Deriving the exclusion from the same layout the props come
+    // from means the two can't drift apart when either is edited.
+    const blocked = ( x, z, clearance ) => COVER_LAYOUT.some( ( c ) => {
+      const ext = c.kind === 'container' ? ( c.len ?? 6 ) * 0.5 + 1.4
+        : c.kind === 'planter' ? ( c.w ?? 2.2 ) * 0.5 + 1.0
+        : c.kind === 'barrier' ? ( c.len ?? 2.4 ) * 0.5 + 0.8
+        : ( c.size ?? 1 ) * 0.5 + 0.8;
+      return Math.hypot( c.x - x, c.z - z ) < ext + clearance;
+    } );
+
     for ( let i = -3; i <= 3; i++ ) {
       if ( i === 0 ) continue;
       for ( const sx of [ -1, 1 ] ) {
+        const x = sx * 4.8, z = i * 8.5;
+        if ( blocked( x, z, 0.6 ) ) continue;
         const g = lamppost( 5.2 );
         if ( sx < 0 ) g.rotateY( Math.PI );
-        g.translate( sx * 4.8, 0, i * 8.5 );
+        g.translate( x, 0, z );
         parts.push( g );
-        this.physics.addCylinder( V( sx * 4.8, 2.6, i * 8.5 ), 0.14, 5.2, { tag: 'prop' } );
+        this.physics.addCylinder( V( x, 2.6, z ), 0.14, 5.2, { tag: 'prop' } );
       }
     }
 

@@ -38,7 +38,7 @@ export class Game {
     this.level = new Level( this.physics, { quality } );
     scene.add( this.level.group );
 
-    this.cameraRig = new CameraRig( camera, { distance: 10, pitch: 0.30 } );
+    this.cameraRig = new CameraRig( camera, { distance: 8.6, pitch: 0.34 } );
 
     this.squad = [];
     this.hostiles = [];
@@ -180,7 +180,22 @@ export class Game {
     } else {
       const material = hit.tag === 'world' || hit.tag === 'cover' ? 'impactConcrete' : 'impactMetal';
       this.vfx.emit( material, { position: hit.point, direction: hit.normal } );
-      this.vfx.decals?.spawn?.( hit.point, hit.normal );
+
+      // Decals are flat XZ quads by construction, so they can only be laid on
+      // ground-facing surfaces. Spawning one for a wall hit put a horizontal
+      // disc through the middle of the prop that was shot — and passing the
+      // hit point positionally rather than as `position` had been dropping
+      // every mark at the world origin.
+      if ( hit.normal.y > 0.7 ) {
+        this.vfx.decals.spawn( {
+          position: hit.point,
+          type: 'bullet',
+          radius: 0.09 + Math.random() * 0.05,
+          opacity: 0.42,
+          life: 12,
+          color: 0x2f2a3d,
+        } );
+      }
       this.audio?.playAt?.( 'impactConcrete', hit.point );
     }
   }
@@ -404,7 +419,7 @@ export class Game {
       s.squad.push( {
         id: u.id,
         name: u.name,
-        role: ROLE_BY_WEAPON[ u.stats.kind ] ?? 'STRIKER',
+        role: ROLE_BY_WEAPON[ u.stats.kind ] ?? 'ATK',
         color: u.color,
         hp: Math.round( u.hp ),
         maxHp: Math.round( u.maxHp ),
@@ -534,11 +549,13 @@ export class Game {
 const _UP = new THREE.Vector3( 0, 1, 0 );
 
 /** Weapon archetype -> the role label shown on the roster card. */
+// The roster chip clips to three characters, so these are authored to read
+// correctly truncated rather than being cut into something unfortunate.
 const ROLE_BY_WEAPON = {
-  rifle: 'STRIKER',
-  smg: 'ASSAULT',
-  shotgun: 'BREACH',
-  sniper: 'SPECIAL',
+  rifle: 'ATK',
+  smg: 'SMG',
+  shotgun: 'CQB',
+  sniper: 'SNP',
 };
 
 function formatTime( seconds ) {

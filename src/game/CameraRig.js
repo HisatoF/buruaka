@@ -21,11 +21,16 @@ export class CameraRig {
     this.camera = camera;
 
     this.yaw = opts.yaw ?? 0;
-    this.pitch = opts.pitch ?? 0.30;          // radians below horizontal
-    this.distance = opts.distance ?? 10;
+    this.pitch = opts.pitch ?? 0.34;          // radians below horizontal
+    this.distance = opts.distance ?? 8.6;
     this.minDistance = 6.5;
     this.maxDistance = 22;
     this.height = opts.height ?? 1.4;
+
+    // When false, the rig stops driving the camera entirely. The capture
+    // harness sets this to pin a fixed framing; without it every static
+    // framing was silently overwritten on the very next frame.
+    this.enabled = true;
 
     this.focus = new THREE.Vector3( 0, 1.2, 0 );
     this.smoothed = new THREE.Vector3( 0, 1.2, 0 );
@@ -66,13 +71,14 @@ export class CameraRig {
    * @param {number} spread  Radius of the squad formation, metres.
    */
   update( dt, squadCentre, engagementCentre, spread = 0 ) {
+    if ( !this.enabled ) return;
     // Bias the framing toward the fight, but cap the pull in metres rather
     // than as a fraction. A ratio looks fine at short range and shoves the
     // squad off the bottom of the frame the moment the enemy is 20 m away.
     _target.copy( squadCentre );
     if ( engagementCentre ) {
       _tmp.subVectors( engagementCentre, squadCentre ).setY( 0 );
-      const pull = Math.min( _tmp.length() * 0.35, 4.5 );
+      const pull = Math.min( _tmp.length() * 0.28, 2.8 );
       if ( _tmp.lengthSq() > 1e-6 ) _target.addScaledVector( _tmp.normalize(), pull );
     }
     _target.y = 1.15;
@@ -82,7 +88,7 @@ export class CameraRig {
     const k = 1 - Math.pow( 0.0015, dt );
     this.smoothed.lerp( _target, k );
 
-    const dist = THREE.MathUtils.clamp( this.distance + spread * 0.42, this.minDistance, this.maxDistance + 4 );
+    const dist = THREE.MathUtils.clamp( this.distance + spread * 0.26, this.minDistance, this.maxDistance );
 
     _offset.set(
       Math.sin( this.yaw ) * Math.cos( this.pitch ),

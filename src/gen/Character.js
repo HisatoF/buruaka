@@ -40,7 +40,7 @@ export const STUDENT_PRESETS = {
     skin: 0xffe0cb,
     hair: { color: 0x8fb4e8, accent: 0xc3daf7, style: 'ponytail' },
     eyes: { color: 0x4d9fe0, shape: 'droopy', lash: 0x2b3352 },
-    brow: 0x7d9ac9,
+    brow: 0x5d7bab,
     outfit: { shirt: 0xf7f9fd, skirt: 0x3f4a76, jacket: 0x4b5988, ribbon: 0xff5d6c, socks: 0x3f4a72, shoes: 0x333c5c, trim: 0x35a3ea, sockBand: 0x46507a, sole: 0xe8edf5, belt: 0x2b3350 },
     halo: { type: 'ring', color: 0x8fd8ff },
     weapon: 'rifle',
@@ -50,7 +50,7 @@ export const STUDENT_PRESETS = {
     skin: 0xffe6d4,
     hair: { color: 0xf2d478, accent: 0xfff0b8, style: 'twintail' },
     eyes: { color: 0x36b37e, shape: 'round', lash: 0x453a2c },
-    brow: 0xc0a35a,
+    brow: 0x9a7c3e,
     outfit: { shirt: 0xf7f9fd, skirt: 0x475283, jacket: 0x5a67a0, ribbon: 0x36b37e, socks: 0xf2f5fa, shoes: 0x2b3148, trim: 0xffd54a, sockBand: 0xdfe6f2, sole: 0xf0f3f8, belt: 0x2f3757 },
     halo: { type: 'wing', color: 0xffe89a },
     weapon: 'smg',
@@ -60,7 +60,7 @@ export const STUDENT_PRESETS = {
     skin: 0xffdcc6,
     hair: { color: 0x8e4a68, accent: 0xd07fa0, style: 'long' },
     eyes: { color: 0xd8465e, shape: 'sharp', lash: 0x3a2030 },
-    brow: 0x5e3348,
+    brow: 0x4a2839,
     outfit: { shirt: 0xf4f0f6, skirt: 0x553650, jacket: 0x6a4462, ribbon: 0xffd54a, socks: 0x3d2a3a, shoes: 0x1f1420, trim: 0xd8465e, sockBand: 0x40283c, sole: 0xe9e2ea, belt: 0x3a2436 },
     halo: { type: 'cross', color: 0xff9ab5 },
     weapon: 'shotgun',
@@ -70,7 +70,7 @@ export const STUDENT_PRESETS = {
     skin: 0xfff0e2,
     hair: { color: 0xe8eaf2, accent: 0xffffff, style: 'bob' },
     eyes: { color: 0x7b6ee0, shape: 'cool', lash: 0x3a3552 },
-    brow: 0xb9bccd,
+    brow: 0x8f93a8,
     outfit: { shirt: 0xffffff, skirt: 0x43528a, jacket: 0x5566ab, ribbon: 0x7b6ee0, socks: 0xf2f5fa, shoes: 0x2a3050, trim: 0x9fe8ff, sockBand: 0xdde7f5, sole: 0xf2f5fa, belt: 0x2c3558 },
     halo: { type: 'diamond', color: 0xc9c0ff },
     weapon: 'sniper',
@@ -150,20 +150,30 @@ function buildBody( design ) {
       { t: 0, r: 0.032 }, { t: 0.35, r: 0.029 }, { t: 1, r: 0.021 },
     ], { radial: 12, capTop: false, capBottom: true, capRound: 1 } ), skin ) );
 
-    // Hand: a flattened rounded box with a thumb stub. At the distances this
-    // game is played at, articulated fingers would be invisible geometry.
+    // Hand: a closed-fist mass, not a paddle. Articulated fingers would be
+    // invisible at this camera distance, but proportion is not — a hand that
+    // is three times longer than it is thick reads as a claw no matter how
+    // small it gets on screen. The knuckle ridge and the thumb wrap are what
+    // make it read as a gripping fist.
     const handDir = wrist.clone().sub( elbow ).normalize();
-    const hand = roundedBox( 0.030, 0.086, 0.058, 0.014, 3 );
     const q = new THREE.Quaternion().setFromUnitVectors( V( 0, -1, 0 ), handDir );
-    hand.applyMatrix4( new THREE.Matrix4().makeRotationFromQuaternion( q ) );
-    hand.translate( wrist.x + handDir.x * 0.038, wrist.y + handDir.y * 0.038, wrist.z + handDir.z * 0.038 );
-    parts.push( paintGeometry( hand, skin ) );
+    const placeOnHand = ( geo, along, side, fwd ) => {
+      geo.applyMatrix4( new THREE.Matrix4().makeRotationFromQuaternion( q ) );
+      geo.translate(
+        wrist.x + handDir.x * along - sx * side,
+        wrist.y + handDir.y * along,
+        wrist.z + handDir.z * along + fwd
+      );
+      return paintGeometry( geo, skin );
+    };
 
-    const thumb = roundedBox( 0.020, 0.040, 0.020, 0.009, 2 );
-    thumb.rotateZ( sx * -0.7 );
-    thumb.applyMatrix4( new THREE.Matrix4().makeRotationFromQuaternion( q ) );
-    thumb.translate( wrist.x + handDir.x * 0.022 - sx * 0.020, wrist.y + handDir.y * 0.022, wrist.z + 0.020 );
-    parts.push( paintGeometry( thumb, skin ) );
+    parts.push( placeOnHand( roundedBox( 0.050, 0.062, 0.046, 0.020, 3 ), 0.048, 0, 0.002 ) );
+    // Knuckle ridge across the front of the fist.
+    parts.push( placeOnHand( roundedBox( 0.050, 0.024, 0.022, 0.010, 2 ), 0.070, 0, 0.014 ) );
+    // Thumb wrapped across, rather than sticking out as a separate stub.
+    const thumb = roundedBox( 0.022, 0.044, 0.024, 0.010, 2 );
+    thumb.rotateX( 0.5 );
+    parts.push( placeOnHand( thumb, 0.048, 0.024, 0.020 ) );
   }
 
   // --- legs ------------------------------------------------------------
@@ -238,21 +248,39 @@ function buildOutfit( design ) {
   }
 
   // --- ribbon ----------------------------------------------------------
-  const knot = roundedBox( 0.026, 0.028, 0.022, 0.008, 2 );
-  knot.translate( 0, 1.262, 0.082 );
-  parts.push( paintGeometry( knot, o.ribbon ) );
+  // Built from tapered wings rather than rotated boxes: a box rotated about
+  // two axes reads as an arrowhead, not as a loop of fabric.
   for ( const sx of [ -1, 1 ] ) {
-    const loop = roundedBox( 0.055, 0.042, 0.016, 0.010, 2 );
-    loop.rotateZ( sx * 0.30 );
-    loop.rotateY( sx * -0.28 );
-    loop.translate( sx * 0.042, 1.266, 0.076 );
-    parts.push( paintGeometry( loop, o.ribbon ) );
+    const wing = profileTube( [
+      { y: 0.000, rx: 0.006, rz: 0.009 },
+      { y: 0.020, rx: 0.020, rz: 0.013 },
+      { y: 0.046, rx: 0.026, rz: 0.015 },
+      { y: 0.062, rx: 0.014, rz: 0.010 },
+    ], { radial: 10, capTop: true, capBottom: true, capRound: 0.4 } );
+    wing.rotateZ( sx * Math.PI / 2 );
+    wing.rotateY( sx * -0.30 );
+    wing.translate( sx * 0.012, 1.258, 0.079 );
+    parts.push( paintGeometry( wing, o.ribbon ) );
 
-    const tailPiece = roundedBox( 0.026, 0.062, 0.012, 0.005, 2 );
-    tailPiece.rotateZ( sx * 0.18 );
-    tailPiece.translate( sx * 0.017, 1.222, 0.080 );
+    // Trailing tail, cut to a point.
+    const tailPiece = profileTube( [
+      { y: 0.000, rx: 0.013, rz: 0.006 },
+      { y: 0.034, rx: 0.014, rz: 0.006 },
+      { y: 0.062, rx: 0.010, rz: 0.005 },
+    ], { radial: 8, capTop: true, capBottom: false } );
+    tailPiece.rotateX( Math.PI );
+    tailPiece.rotateZ( sx * 0.22 );
+    tailPiece.translate( sx * 0.014, 1.252, 0.076 );
     parts.push( paintGeometry( tailPiece, o.ribbon ) );
   }
+
+  const knot = profileTube( [
+    { y: 0.000, rx: 0.012, rz: 0.010 },
+    { y: 0.010, rx: 0.015, rz: 0.013 },
+    { y: 0.022, rx: 0.012, rz: 0.010 },
+  ], { radial: 10, capTop: true, capBottom: true, capRound: 0.6 } );
+  knot.translate( 0, 1.250, 0.083 );
+  parts.push( paintGeometry( knot, o.ribbon ) );
 
   // --- sleeves ---------------------------------------------------------
   // Returned separately so they can be skinned against the arm chain alone.
@@ -263,8 +291,8 @@ function buildOutfit( design ) {
     const shoulder = V( sx * 0.128, 1.288, 0 );
     const cuff = V( sx * 0.224, 1.112, 0 );
     const sleeve = limb( shoulder, cuff, [
-      { t: 0, r: 0.072 }, { t: 0.24, r: 0.066 }, { t: 0.64, r: 0.054 }, { t: 1, r: 0.047 },
-    ], { radial: 16, capTop: false, capBottom: true, capRound: 0.75 } );
+      { t: 0, r: 0.064 }, { t: 0.24, r: 0.062 }, { t: 0.64, r: 0.053 }, { t: 1, r: 0.047 },
+    ], { radial: 16, capTop: false, capBottom: true, capRound: 0.42 } );
     sleeves[ sx ].push( paintGeometry( sleeve, o.jacket ?? o.shirt ) );
 
     const trim = limb( cuff, V( sx * 0.234, 1.098, 0 ), [ { t: 0, r: 0.049 }, { t: 1, r: 0.047 } ], { radial: 16, capTop: false, capBottom: false } );
@@ -274,15 +302,15 @@ function buildOutfit( design ) {
   // --- lower body ------------------------------------------------------
   if ( o.skirt ) {
     parts.push( paintGeometry( pleatedSkirt( {
-      waistY: 0.905, hemY: 0.660,
-      waistRX: 0.132, waistRZ: 0.096,
-      hemRX: 0.212, hemRZ: 0.168,
+      waistY: 0.930, hemY: 0.655,
+      waistRX: 0.152, waistRZ: 0.112,
+      hemRX: 0.224, hemRZ: 0.178,
       pleats: 22, depth: 0.115,
     } ), o.skirt ) );
 
     // Waistband.
     parts.push( paintGeometry( profileTube( [
-      { y: 0.898, rx: 0.132, rz: 0.096 }, { y: 0.930, rx: 0.134, rz: 0.098 },
+      { y: 0.922, rx: 0.152, rz: 0.112 }, { y: 0.956, rx: 0.150, rz: 0.110 },
     ], { radial: 22, capTop: false, capBottom: false } ), o.belt ?? o.jacket ?? o.skirt ) );
   } else if ( o.trousers ) {
     for ( const sx of [ -1, 1 ] ) {
@@ -537,9 +565,9 @@ export class Character {
     // --- materials -------------------------------------------------------
     const outlineMat = createOutlineMaterial( {
       color: design.outlineColor ?? PALETTE.ink,
-      thickness: 0.0030,
+      thickness: 0.0055,
       vertexTint: true,
-      tintMix: 0.8,
+      tintMix: 0.45,
     } );
     this.outlineMaterial = outlineMat;
 
@@ -559,9 +587,18 @@ export class Character {
       } );
       outfit[ `sleeve${side}Skinned` ] = geo;
     }
+    // Characters take no cast shadow at all. `mesh.receiveShadow = false` is
+    // not enough: three r185 defines USE_SHADOWMAP purely from the renderer's
+    // shadowMap.enabled, with no per-object gate, so a custom ShaderMaterial
+    // samples the map regardless — which is why every character was
+    // self-shadowing into mottled acne and why the fringe read two values
+    // darker than the crown it grows out of. Form comes from the cel ramp
+    // here, the way it does in the source material; the shadow map's job is
+    // to put characters on the ground, not to shade them.
     const bodyMat = createToonMaterial( {
       color: 0xffffff,
       vertexTint: true,
+      shadowStrength: 0,
       specStrength: 0.10,
       specGloss: 22,
       rimStrength: 0.45,
@@ -587,6 +624,7 @@ export class Character {
     const headMat = createToonMaterial( {
       color: 0xffffff,
       map: headSkinTex,
+      shadowStrength: 0,
       // Faces stay lit. Letting the cel ramp fall across a face is what makes
       // a stylised character look like a 3D dummy instead of a drawing.
       flatten: 0.82,
@@ -614,6 +652,7 @@ export class Character {
     const hairMat = createToonMaterial( {
       color: 0xffffff,
       vertexTint: true,
+      shadowStrength: 0,
       // A tight, banded highlight running around the head is the signature of
       // anime hair; `specBand` folds a horizontal mask over the specular so it
       // forms a ring rather than a blob.
@@ -708,6 +747,23 @@ export class Character {
     return mesh;
   }
 
+  /**
+   * The head's front surface at a given height, mirroring the maths in
+   * {@link shapeHead}.
+   *
+   * Face cards were previously placed at one fixed Z for every feature, which
+   * works at eye level and fails badly at the mouth: the jaw tapers to 60% of
+   * its width by the chin, so a card at eye-level Z ends up floating three
+   * centimetres in front of the face and reads as sitting on the neck.
+   */
+  static headSurfaceZ( worldY, radius = 0.118, jawNarrow = 0.60, chin = 0.24 ) {
+    const t = THREE.MathUtils.clamp( ( worldY - HEAD.centerY ) / radius, -0.999, 0.999 );
+    const ring = radius * Math.sqrt( Math.max( 0, 1 - t * t ) );
+    if ( t >= 0 ) return ring;
+    const k = 1 - ( 1 - jawNarrow ) * Math.pow( -t, 1.5 );
+    return ring * k + chin * radius * Math.pow( -t, 2.4 );
+  }
+
   _buildFace( design, headBone ) {
     const atlas = makeFaceAtlas( {
       irisColor: design.eyes.color,
@@ -756,11 +812,25 @@ export class Character {
       return mesh;
     };
 
+    // The head spans y 1.366 (chin) to 1.602 (crown). Anime proportion puts
+    // the eyeline a little above the halfway point of that span, not two
+    // thirds of the way down it, and keeps the brow-to-eye gap tight.
+    // Stacked to clear each other: the fringe now terminates around 1.528, so
+    // the brow sits just under it and the eye card's top edge stays clear of
+    // both. Bangs cutting a hard opaque edge across an iris is the fastest way
+    // to make a stylised face look broken.
+    const EYE_Y = 1.470;
+    const BROW_Y = 1.514;
+    const MOUTH_Y = 1.416;
+
+    // Each card sits a hair proud of the head's own surface at its height.
+    const zAt = ( y, lift ) => Character.headSurfaceZ( y ) - lift;
+
     for ( const sx of [ -1, 1 ] ) {
-      cards.eyes.push( mkCard( 0.082, 0.082, sx * 0.049, localY( 1.450 ), 0.101, 0.40 ) );
-      cards.brows.push( mkCard( 0.066, 0.033, sx * 0.051, localY( 1.505 ), 0.104, 0.34 ) );
+      cards.eyes.push( mkCard( 0.078, 0.078, sx * 0.047, localY( EYE_Y ), zAt( EYE_Y, 0.012 ), 0.40 ) );
+      cards.brows.push( mkCard( 0.062, 0.031, sx * 0.050, localY( BROW_Y ), zAt( BROW_Y, 0.010 ), 0.34 ) );
     }
-    cards.mouth = mkCard( 0.050, 0.050, 0, localY( 1.396 ), 0.105, 0.30 );
+    cards.mouth = mkCard( 0.046, 0.046, 0, localY( MOUTH_Y ), zAt( MOUTH_Y, 0.008 ), 0.30 );
 
     headBone.add( group );
     this.faceGroup = group;
