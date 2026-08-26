@@ -74,6 +74,8 @@ export class Game {
 
   _spawnSquad() {
     SQUAD.forEach( ( key, i ) => {
+      // A shallow wedge: leads forward and outboard, support tucked behind.
+      const lane = i - ( SQUAD.length - 1 ) / 2;
       const unit = new Unit( {
         preset: key,
         team: TEAM.SQUAD,
@@ -81,6 +83,7 @@ export class Game {
         physics: this.physics,
         game: this,
         quality: this.quality,
+        formationOffset: new THREE.Vector3( lane * 1.9, 0, Math.abs( lane ) * 1.5 ),
       } );
       unit.skill = SKILLS[ key ] ?? SKILLS.default;
       unit.skillCooldown = 0;
@@ -137,12 +140,17 @@ export class Game {
 
     // A tracer on every round would be a wall of light; one in three reads as
     // continuous fire while leaving the individual shots legible.
+    //
+    // The trail sprites carry only a couple of metres per second of their own
+    // velocity, so emitting one at the muzzle left them stalled in a little
+    // cloud at the shooter's hands rather than streaking down the shot line.
+    // Seeding several along the path draws the line directly.
     if ( Math.random() < 0.34 ) {
-      this.vfx.emit( 'bulletTrail', {
-        position: origin,
-        direction,
-        color: shooter.team === TEAM.SQUAD ? 0x9fe0ff : 0xffb08a,
-      } );
+      const tint = shooter.team === TEAM.SQUAD ? 0x9fe0ff : 0xffb08a;
+      for ( let k = 0; k < 4; k++ ) {
+        _v.copy( origin ).addScaledVector( direction, 0.7 + k * 1.7 );
+        this.vfx.emit( 'bulletTrail', { position: _v, direction, count: 0.6, color: tint } );
+      }
     }
   }
 
@@ -189,6 +197,9 @@ export class Game {
       if ( hit.normal.y > 0.7 ) {
         this.vfx.decals.spawn( {
           position: hit.point,
+          // The pool defaults every mark to just above y=0, so a hit on a
+          // crate lid left its chip on the ground underneath the crate.
+          y: hit.point.y + 0.012,
           type: 'bullet',
           radius: 0.09 + Math.random() * 0.05,
           opacity: 0.42,
@@ -223,10 +234,13 @@ export class Game {
   }
 
   onFire( unit, muzzlePos, direction ) {
+    // Head-height, not torso-height. A flash wider than the character firing
+    // it erases the shooter, and the reader loses track of who is engaging.
     this.vfx.emit( 'muzzleFlash', {
       position: muzzlePos,
       direction,
-      scale: unit.stats.kind === 'sniper' ? 1.5 : ( unit.stats.kind === 'shotgun' ? 1.35 : 1 ),
+      scale: unit.stats.kind === 'sniper' ? 0.85 : ( unit.stats.kind === 'shotgun' ? 0.75 : 0.55 ),
+      count: 0.8,
       color: unit.team === TEAM.SQUAD ? undefined : 0xffa070,
     } );
     const eject = unit.character.weapon?.ejectPort;
@@ -463,7 +477,10 @@ export class Game {
         maxHp: Math.round( h.maxHp ),
         shield: 0,
         tags: h.armor > 0 ? [ 'HEAVY' ] : [ 'LIGHT' ],
-        occluded: false,
+        // Nameplates were drawing at full strength through containers and
+        // planters that completely hide their owner, which reads as the UI
+        // lying about what the player can see.
+        occluded: !this.physics.lineOfSight( this.camera.position, h.headPoint( _v ), LAYER_STATIC ),
       } );
     }
 

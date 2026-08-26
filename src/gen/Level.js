@@ -56,10 +56,10 @@ function crate( size = 1.0 ) {
   const parts = [];
   parts.push( paintGeometry( roundedBox( size, size, size, size * 0.04, 2 ), LEVEL_COLORS.crate ) );
   // Corner banding, which is what makes a box read as a crate at a glance.
-  const t = size * 0.095;
+  const t = size * 0.09;
   for ( const sy of [ -1, 1 ] ) {
-    parts.push( paintGeometry( xform( roundedBox( size * 1.04, t, size * 1.04, t * 0.3, 1 ),
-      { position: [ 0, sy * ( size * 0.5 - t * 0.55 ), 0 ] } ), LEVEL_COLORS.metal ) );
+    parts.push( paintGeometry( xform( roundedBox( size * 1.035, t, size * 1.035, t * 0.3, 1 ),
+      { position: [ 0, sy * ( size * 0.5 - t * 1.15 ), 0 ] } ), LEVEL_COLORS.metal ) );
   }
   // Vertical corner posts, so the crate has a frame instead of a stripe.
   for ( const sx of [ -1, 1 ] ) for ( const sz of [ -1, 1 ] ) {
@@ -556,19 +556,39 @@ export class Level {
     this.physics.addBox( V( -w - t, h / 2, 0 ), V( t, h / 2, d + t * 2 ), { tag: 'world' } );
     this.physics.addBox( V( w + t, h / 2, 0 ), V( t, h / 2, d + t * 2 ), { tag: 'world' } );
 
-    // A low perimeter wall, so the boundary is visible rather than an
-    // invisible shove.
+    // A balustrade rather than a bare capped wall. Seen edge-on from across
+    // the arena, a flat trim cap read as a stray blue line ruled across the
+    // whole frame; posts and a rail give it depth and make it read as
+    // architecture.
     const parts = [];
     for ( const [ x, z, sw, sd ] of [
-      [ 0, -d, w, 0.35 ], [ 0, d, w, 0.35 ],
-      [ -w, 0, 0.35, d ], [ w, 0, 0.35, d ],
+      [ 0, -d, w, 0.28 ], [ 0, d, w, 0.28 ],
+      [ -w, 0, 0.28, d ], [ w, 0, 0.28, d ],
     ] ) {
-      const g = roundedBox( sw * 2, 1.05, sd * 2, 0.05, 1 );
-      g.translate( x, 0.52, z );
-      parts.push( paintGeometry( g, LEVEL_COLORS.barrier ) );
-      const cap = roundedBox( sw * 2 + 0.14, 0.14, sd * 2 + 0.14, 0.03, 1 );
-      cap.translate( x, 1.06, z );
-      parts.push( paintGeometry( cap, LEVEL_COLORS.trim ) );
+      const base = roundedBox( sw * 2, 0.78, sd * 2, 0.05, 1 );
+      base.translate( x, 0.39, z );
+      parts.push( paintGeometry( base, LEVEL_COLORS.barrier ) );
+
+      const cap = roundedBox( sw * 2 + 0.16, 0.13, sd * 2 + 0.16, 0.03, 1 );
+      cap.translate( x, 0.82, z );
+      parts.push( paintGeometry( cap, LEVEL_COLORS.kerb ) );
+
+      // Posts along the run, plus a top rail carried on them.
+      const along = sw > sd ? 'x' : 'z';
+      const span = ( along === 'x' ? sw : sd ) * 2;
+      const posts = Math.max( 2, Math.round( span / 2.6 ) );
+      for ( let i = 0; i <= posts; i++ ) {
+        const t = ( i / posts - 0.5 ) * span;
+        const post = roundedBox( 0.085, 0.62, 0.085, 0.02, 1 );
+        post.translate( along === 'x' ? x + t : x, 1.19, along === 'x' ? z : z + t );
+        parts.push( paintGeometry( post, LEVEL_COLORS.trim ) );
+      }
+      const rail = roundedBox(
+        along === 'x' ? sw * 2 : 0.10, 0.10,
+        along === 'x' ? 0.10 : sd * 2, 0.03, 1
+      );
+      rail.translate( x, 1.52, z );
+      parts.push( paintGeometry( rail, LEVEL_COLORS.trim ) );
     }
     const mat = createToonMaterial( this._toonProps() );
     this._materials.push( mat );

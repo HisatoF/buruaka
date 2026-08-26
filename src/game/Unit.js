@@ -89,6 +89,9 @@ export class Unit {
 
     // Desynchronise the AI so a squad doesn't think in lockstep.
     this._think = Math.random() * 0.3;
+
+    // Staggered wedge rather than a rank abreast.
+    this.formationOffset = cfg.formationOffset ?? new THREE.Vector3();
   }
 
   get position() { return this.body.position; }
@@ -206,6 +209,7 @@ export class Unit {
         this.releaseCover();
         this.state = 'regroup';
         this.destination = _v.copy( ctx.centre )
+          .add( this.formationOffset ?? _ZERO )
           .sub( this.position ).setY( 0 ).normalize()
           .multiplyScalar( strayed - ctx.cohesion * 0.6 )
           .add( this.position ).clone();
@@ -221,7 +225,9 @@ export class Unit {
 
     if ( !this.target ) {
       this.state = 'advance';
-      this.destination = ctx.rally ?? null;
+      this.destination = ctx.rally
+        ? _v.copy( ctx.rally ).add( this.formationOffset ?? _ZERO ).clone()
+        : null;
       return;
     }
 

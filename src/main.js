@@ -187,9 +187,18 @@ async function main() {
       const u = alive[ 0 ];
       const t = nearest ? nearest.position : new THREE.Vector3( centre.x, 0, centre.z - 12 );
       const back = new THREE.Vector3().subVectors( u.position, t ).setY( 0 ).normalize();
+      const look = new THREE.Vector3( t.x, 1.2, t.z );
+      for ( const d of [ 2.6, 3.6, 5.0 ] ) {
+        const pos = new THREE.Vector3(
+          u.position.x + back.x * d + 0.8, 1.95 + ( d - 2.6 ) * 0.4, u.position.z + back.z * d
+        );
+        if ( game.physics.lineOfSight( pos, look, 1 ) ) {
+          return { pos: [ pos.x, pos.y, pos.z ], look: [ look.x, look.y, look.z ], fov: 40 };
+        }
+      }
       return {
-        pos: [ u.position.x + back.x * 2.6 + 0.8, 1.95, u.position.z + back.z * 2.6 ],
-        look: [ t.x, 1.2, t.z ],
+        pos: [ u.position.x + back.x * 3.2 + 0.8, 3.4, u.position.z + back.z * 3.2 ],
+        look: [ look.x, look.y, look.z ],
         fov: 40,
       };
     }
@@ -200,11 +209,26 @@ async function main() {
       ? new THREE.Vector3().subVectors( nearest.position, centre ).setY( 0 ).normalize()
       : new THREE.Vector3( 0, 0, -1 );
     const side = new THREE.Vector3( axis.z, 0, -axis.x );
-    return {
-      pos: [ mid.x + side.x * 9 + axis.x * -3, 3.4, mid.z + side.z * 9 + axis.z * -3 ],
-      look: [ mid.x, 1.1, mid.z ],
-      fov: 40,
-    };
+    const look = new THREE.Vector3( mid.x, 1.1, mid.z );
+
+    // Try both flanks and rising heights until the subject is actually
+    // visible. A fixed side-on offset happily parks the camera inside a
+    // shipping container, and a review shot of the inside of a container
+    // tells nobody anything.
+    for ( const flank of [ 1, -1 ] ) {
+      for ( const height of [ 3.4, 4.6, 6.2, 8.5 ] ) {
+        const pos = new THREE.Vector3(
+          mid.x + side.x * 9 * flank - axis.x * 3,
+          height,
+          mid.z + side.z * 9 * flank - axis.z * 3
+        );
+        if ( game.physics.lineOfSight( pos, look, 1 /* LAYER_STATIC */ ) ) {
+          return { pos: [ pos.x, pos.y, pos.z ], look: [ look.x, look.y, look.z ], fov: 40 };
+        }
+      }
+    }
+    // Nothing clear: fall back to straight overhead, which always is.
+    return { pos: [ mid.x, 11, mid.z + 7 ], look: [ look.x, look.y, look.z ], fov: 40 };
   }
 
   window.__capture = ( name ) => {
