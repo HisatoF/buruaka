@@ -139,9 +139,9 @@ export class PostFX {
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2( size.x, size.y ),
-      options.bloomStrength ?? 0.62,
+      options.bloomStrength ?? 0.80,
       options.bloomRadius ?? 0.62,
-      options.bloomThreshold ?? 0.94
+      options.bloomThreshold ?? 1.06
     );
     this.composer.addPass( this.bloomPass );
 

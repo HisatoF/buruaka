@@ -347,7 +347,10 @@ export class Level {
     const texSize = quality >= 2 ? 1024 : 512;
 
     const plaza = makePavementTiles( { size: texSize, tilesX: 6, tilesY: 6 } );
-    const asphalt = makeAsphalt( { size: texSize } );
+    // Concrete, not asphalt. A real road surface is far darker than a pale
+    // plaza, and at this camera height the value gap read as a pit cut through
+    // the middle of the arena rather than as a street.
+    const paving = makeConcrete( { size: texSize } );
 
     const groundMat = createToonMaterial( this._toonProps( {
       map: plaza.map,
@@ -374,11 +377,11 @@ export class Level {
     // A road strip crossing the arena, which breaks up the plaza and gives
     // the eye a line to follow.
     const roadMat = createToonMaterial( this._toonProps( {
-      map: asphalt.map,
-      normalMap: asphalt.normalMap,
-      normalScale: 0.55,
-      color: 0xf2f4f7,
-      uvScale: [ 2.2, 18 ],
+      map: paving.map,
+      normalMap: paving.normalMap,
+      normalScale: 0.5,
+      color: 0xd8dde6,
+      uvScale: [ 2.6, 16 ],
       vertexTint: false,
       specStrength: 0.02,
       rimStrength: 0,
@@ -391,6 +394,22 @@ export class Level {
     road.receiveShadow = true;
     this.group.add( road );
 
+    // Lane markings.
+    const markParts = [];
+    for ( let i = -14; i <= 14; i++ ) {
+      const dash = roundedBox( 0.16, 0.012, 1.5, 0.004, 1 );
+      dash.translate( 0, 0.020, i * 3.4 );
+      markParts.push( paintGeometry( dash, 0xf6f2e4 ) );
+    }
+    for ( const sx of [ -1, 1 ] ) {
+      const edge = roundedBox( 0.13, 0.012, ARENA.halfDepth * 2 + 36, 0.004, 1 );
+      edge.translate( sx * 3.4, 0.020, 0 );
+      markParts.push( paintGeometry( edge, 0xf6f2e4 ) );
+    }
+    const markMat = createToonMaterial( this._toonProps( { specStrength: 0, rimStrength: 0 } ) );
+    this._materials.push( markMat );
+    this._add( mergeGeometries( markParts ), markMat, { cast: false, outline: false } );
+
     // Kerbs.
     const kerbParts = [];
     for ( const sx of [ -1, 1 ] ) {
@@ -398,8 +417,9 @@ export class Level {
       k.translate( sx * 3.9, 0.08, 0 );
       kerbParts.push( paintGeometry( k, LEVEL_COLORS.kerb ) );
     }
-    this._add( mergeGeometries( kerbParts ), createToonMaterial( this._toonProps() ), { cast: false } );
-    this._materials.push( this.group.children[ this.group.children.length - 2 ].material );
+    const kerbMat = createToonMaterial( this._toonProps() );
+    this._materials.push( kerbMat );
+    this._add( mergeGeometries( kerbParts ), kerbMat, { cast: false } );
   }
 
   _buildProps() {
@@ -425,8 +445,8 @@ export class Level {
           // collision would be more correct, but a slightly generous box is
           // the right trade: it never lets a unit clip into the mesh.
           const ry = Math.abs( c.ry ?? 0 );
-          const hw = ( 2.4 / 2 ) * Math.cos( ry ) + ( len / 2 ) * Math.sin( ry );
-          const hd = ( 2.4 / 2 ) * Math.sin( ry ) + ( len / 2 ) * Math.cos( ry );
+          const hw = ( 2.4 / 2 ) * Math.abs( Math.cos( ry ) ) + ( len / 2 ) * Math.abs( Math.sin( ry ) );
+          const hd = ( 2.4 / 2 ) * Math.abs( Math.sin( ry ) ) + ( len / 2 ) * Math.abs( Math.cos( ry ) );
           half = V( hw, 1.3, hd );
           break;
         }
@@ -436,9 +456,9 @@ export class Level {
           geo.rotateY( c.ry ?? 0 );
           geo.translate( c.x, 0, c.z );
           const ry = Math.abs( c.ry ?? 0 );
-          half = V( 0.34 * Math.cos( ry ) + ( len / 2 ) * Math.sin( ry ), 0.45,
-                    0.34 * Math.sin( ry ) + ( len / 2 ) * Math.cos( ry ) );
-          geo.translate( 0, 0, 0 );
+          const bw = 0.24;   // half-width of the widest tier
+          half = V( bw * Math.abs( Math.cos( ry ) ) + ( len / 2 ) * Math.abs( Math.sin( ry ) ), 0.45,
+                    bw * Math.abs( Math.sin( ry ) ) + ( len / 2 ) * Math.abs( Math.cos( ry ) ) );
           break;
         }
         case 'planter': {
@@ -446,7 +466,12 @@ export class Level {
           geo = planter( w, d, h );
           geo.rotateY( c.ry ?? 0 );
           geo.translate( c.x, h / 2, c.z );
-          half = V( w / 2, h / 2, d / 2 );
+          const ry = Math.abs( c.ry ?? 0 );
+          half = V(
+            ( w / 2 ) * Math.abs( Math.cos( ry ) ) + ( d / 2 ) * Math.abs( Math.sin( ry ) ),
+            h / 2,
+            ( w / 2 ) * Math.abs( Math.sin( ry ) ) + ( d / 2 ) * Math.abs( Math.cos( ry ) )
+          );
           break;
         }
         default:
