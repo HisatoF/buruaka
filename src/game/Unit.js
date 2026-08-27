@@ -64,8 +64,11 @@ export class Unit {
     this.dead = false;
     this.downedTimer = 0;
 
+    // Sized to the visible silhouette, not the torso: the skirt hem alone is
+    // 0.22 m in radius and the hair tails swing wider still, so a 0.30 m
+    // capsule let two units touch while their art plainly overlapped.
     this.body = this.physics.addCapsule(
-      cfg.position, 0.30 * scale, 1.55 * scale,
+      cfg.position, 0.38 * scale, 1.55 * scale,
       {
         tag: this.team === TEAM.SQUAD ? 'squad' : 'hostile',
         layer: this.team === TEAM.SQUAD ? LAYER_CHARACTER : LAYER_ENEMY,

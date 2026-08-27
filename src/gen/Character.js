@@ -623,6 +623,8 @@ export class Character {
       vertexTint: true,
       shadowStrength: 0,
       shadowFloor: 0.72,
+      shadowSoft: 0.014,
+      midSoft: 0.026,
       specStrength: 0.10,
       specGloss: 22,
       rimStrength: 0.45,

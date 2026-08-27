@@ -297,57 +297,57 @@ async function main() {
   window.__audio = audio;
   window.__engine = engine;
   /**
-   * Counts units whose capsule is actually intersecting a static collider.
-   * Standing tight against a crate and clipping through it look identical
-   * from an elevated camera, so this measures it instead of guessing.
+   * Measures real interpenetration, both unit-vs-world and unit-vs-unit.
+   *
+   * An earlier version tested only static colliders and skipped `world`-tagged
+   * ones, then a zero result was used to argue that characters never clip.
+   * That argument did not hold: the probe never looked at the case being
+   * disputed. It looks now.
    */
   window.__penetration = () => {
-    const out = [];
-    for ( const u of game.units ) {
+    const units = game.units.filter( ( u ) => !u.dead );
+    const world = [];
+    const pairs = [];
+
+    for ( const u of units ) {
       const p = u.body.position;
       const r = u.body.radius;
       const top = p.y + u.body.height;
+
       for ( const c of game.physics.colliders ) {
-        if ( c.tag === 'world' ) continue;   // arena shell and buildings
-        // Closest point on the box to the capsule's vertical axis.
+        if ( top < c.minY || p.y > c.maxY ) continue;
         const cx = Math.max( c.minX, Math.min( p.x, c.maxX ) );
         const cz = Math.max( c.minZ, Math.min( p.z, c.maxZ ) );
-        const cy = Math.max( c.minY, Math.min( ( p.y + top ) * 0.5, c.maxY ) );
-        if ( cy < c.minY || cy > c.maxY ) continue;
-        if ( top < c.minY || p.y > c.maxY ) continue;
         const d = Math.hypot( p.x - cx, p.z - cz );
-        if ( d < r - 0.02 ) {
-          out.push( { unit: u.name, tag: c.tag, depth: +( r - d ).toFixed( 3 ) } );
+        if ( d < r - 0.02 ) world.push( { unit: u.name, tag: c.tag ?? 'static', depth: +( r - d ).toFixed( 3 ) } );
+      }
+    }
+
+    for ( let i = 0; i < units.length; i++ ) {
+      for ( let j = i + 1; j < units.length; j++ ) {
+        const a = units[ i ], b = units[ j ];
+        // Vertical overlap first — a unit standing on a crate above another
+        // is not interpenetrating.
+        const aTop = a.body.position.y + a.body.height;
+        const bTop = b.body.position.y + b.body.height;
+        if ( aTop < b.body.position.y || bTop < a.body.position.y ) continue;
+
+        const d = Math.hypot(
+          a.body.position.x - b.body.position.x,
+          a.body.position.z - b.body.position.z
+        );
+        const minD = a.body.radius + b.body.radius;
+        if ( d < minD - 0.02 ) {
+          pairs.push( { a: a.name, b: b.name, depth: +( minD - d ).toFixed( 3 ) } );
         }
       }
     }
-    return out;
-  };
 
-  /**
-   * Reports whether the page is actually in a state worth photographing.
-   *
-   * Under software rendering the WebGL context can be lost mid-run and the
-   * page falls back to the boot or title screen — and a capture harness that
-   * only checks for console errors will happily save that frame and report
-   * success. A review then gets written against pictures of a loading screen.
-   */
-  window.__captureHealth = () => {
-    const bootEl = document.getElementById( 'boot' );
-    const gl = engine.renderer.getContext();
-    return {
-      ok: !( bootEl && getComputedStyle( bootEl ).visibility !== 'hidden' && bootEl.style.display !== 'none' )
-        && !gl.isContextLost()
-        && game.phase !== 'title',
-      phase: game.phase,
-      contextLost: gl.isContextLost(),
-      bootVisible: !!bootEl && bootEl.style.display !== 'none' && getComputedStyle( bootEl ).opacity > 0.02,
-      drawCalls: engine.renderer.info.render.calls,
-    };
+    return { world, pairs, units: units.length };
   };
 
   window.__diagnostics = () => ( {
-    penetrating: window.__penetration(),
+    penetration: window.__penetration(),
     drawCalls: engine.renderer.info.render.calls,
     triangles: engine.renderer.info.render.triangles,
     programs: engine.renderer.info.programs?.length ?? 0,

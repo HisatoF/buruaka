@@ -21,7 +21,7 @@ export class LightingRig {
     this.key.shadow.mapSize.set( options.shadowMapSize ?? 2048, options.shadowMapSize ?? 2048 );
     this.key.shadow.bias = -0.0006;
     this.key.shadow.normalBias = 0.055;
-    this.key.shadow.radius = 2.6;
+    this.key.shadow.radius = 1.1;
     this.key.shadow.intensity = 1;
 
     const d = options.shadowExtent ?? 26;

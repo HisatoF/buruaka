@@ -530,15 +530,18 @@ const PRESETS = {
     layers: [
       { // the flash frame: one big 4-point star, two frames long
         shape: SHAPE.STAR4, count: 1, pool: 'add',
-        life: [ 0.070, 0.085 ], size: [ 1.05, 1.30 ], sizeEnd: 1.35, sizePow: 1.9,
-        color: 0xfff4cf, colorEnd: 0xffc23d, hdr: 4.4, hdrEnd: 2.1,
+        // Head height, not body height. A flash as wide as the character
+        // firing it erases the shooter, and the player loses track of who is
+        // engaging — which is the one thing a muzzle flash exists to tell them.
+        life: [ 0.070, 0.085 ], size: [ 0.34, 0.46 ], sizeEnd: 1.15, sizePow: 1.9,
+        color: 0xfff4cf, colorEnd: 0xffc23d, hdr: 2.6, hdrEnd: 1.4,
         param: [ 7, 10 ], rot: [ -0.35, 0.35 ], fadeIn: 0.10, fadePow: 1.5,
         dirSpeed: [ 0.6, 0.9 ], tint: true,
       },
       { // warm halo behind it so the star sits in a pool of light
         shape: SHAPE.GLOW, count: 1, pool: 'add',
-        life: [ 0.10, 0.13 ], size: [ 0.50, 0.62 ], sizeEnd: 1.7, sizePow: 1.9,
-        color: 0xffd54a, colorEnd: 0xff8a3d, hdr: 1.9, hdrEnd: 0.7,
+        life: [ 0.10, 0.13 ], size: [ 0.20, 0.26 ], sizeEnd: 1.7, sizePow: 1.9,
+        color: 0xffd54a, colorEnd: 0xff8a3d, hdr: 1.4, hdrEnd: 0.5,
         opacity: 0.85, fadeIn: 0.08, fadePow: 2.4, tint: true,
       },
       { // cone of fast sparks
@@ -972,6 +975,8 @@ const _tmpVec = new THREE.Vector3();
 const _tmpVecB = new THREE.Vector3();
 const _qb = new THREE.Quaternion();
 const _upY = new THREE.Vector3( 0, 1, 0 );
+/** The instanced decal quad is authored in XY, so its own forward is +Z. */
+const _decalForward = new THREE.Vector3( 0, 0, 1 );
 const _rightX = new THREE.Vector3( 1, 0, 0 );
 
 /* ====================================================================== */
@@ -1331,13 +1336,19 @@ export class GroundDecalPool {
       px: new Float32Array( capacity ),
       pz: new Float32Array( capacity ),
       py: new Float32Array( capacity ),
+      // Surface normal per slot, so a mark can lie on a wall or a crate face
+      // rather than only on the ground plane.
+      nx: new Float32Array( capacity ),
+      ny: new Float32Array( capacity ).fill( 1 ),
+      nz: new Float32Array( capacity ),
       rot: new Float32Array( capacity ),
     };
   }
 
   /**
-   * @param {object} o { position, type, radius, color, opacity, life, hdr,
-   *                     grow, rotation }
+   * @param {object} o { position, normal, type, radius, color, opacity, life,
+   *                     hdr, grow, rotation }
+   *        `normal` is the surface normal the mark lies on; defaults to +Y.
    */
   spawn( o ) {
     const type = typeof o.type === 'string' ? ( DECAL_TYPE[ o.type ] ?? 0 ) : ( o.type ?? 0 );
@@ -1347,9 +1358,19 @@ export class GroundDecalPool {
     else i = 0;
 
     const p = o.position;
-    L.px[ i ] = p ? ( p.x ?? 0 ) : 0;
-    L.pz[ i ] = p ? ( p.z ?? 0 ) : 0;
-    L.py[ i ] = ( o.y ?? 0.012 ) + ( i % 16 ) * 0.0009;
+    // A per-slot bias along the surface normal, so overlapping marks on the
+    // same face never z-fight.
+    const n = o.normal;
+    const nx = n ? ( n.x ?? 0 ) : 0;
+    const ny = n ? ( n.y ?? 1 ) : 1;
+    const nz = n ? ( n.z ?? 0 ) : 0;
+    const nl = Math.hypot( nx, ny, nz ) || 1;
+    L.nx[ i ] = nx / nl; L.ny[ i ] = ny / nl; L.nz[ i ] = nz / nl;
+
+    const bias = 0.008 + ( i % 16 ) * 0.0009;
+    L.px[ i ] = ( p ? ( p.x ?? 0 ) : 0 ) + L.nx[ i ] * bias;
+    L.pz[ i ] = ( p ? ( p.z ?? 0 ) : 0 ) + L.nz[ i ] * bias;
+    L.py[ i ] = p && p.y !== undefined ? p.y + L.ny[ i ] * bias : ( o.y ?? 0.012 ) + bias;
     L.radius[ i ] = o.radius ?? 0.4;
     L.rot[ i ] = o.rotation ?? Math.random() * TAU;
     L.maxLife[ i ] = L.life[ i ] = o.life ?? 10;
@@ -1373,9 +1394,19 @@ export class GroundDecalPool {
   }
 
   _writeMatrix( L, i, r ) {
-    _q.setFromAxisAngle( _upY, L.rot[ i ] );
-    _qb.setFromAxisAngle( _rightX, -Math.PI * 0.5 );
-    _q.multiply( _qb );
+    // Orient the quad to the surface it was placed on. Laying every mark flat
+    // in XZ means a wall or crate hit puts a horizontal disc through the
+    // middle of the prop that was shot, so those hits had to be suppressed
+    // entirely — and a three-minute firefight left the arena spotless.
+    const nx = L.nx[ i ], ny = L.ny[ i ], nz = L.nz[ i ];
+    _tmpVec.set( nx, ny, nz );
+    if ( _tmpVec.lengthSq() < 1e-6 ) _tmpVec.set( 0, 1, 0 );
+    _tmpVec.normalize();
+
+    // The instanced quad is authored in XY, so its +Z must land on the normal.
+    _qb.setFromUnitVectors( _decalForward, _tmpVec );
+    _q.setFromAxisAngle( _tmpVec, L.rot[ i ] ).multiply( _qb );
+
     _s.set( r, r, r );
     _m.compose( _tmpVec.set( L.px[ i ], L.py[ i ], L.pz[ i ] ), _q, _s );
     _m.toArray( L.mesh.instanceMatrix.array, i * 16 );

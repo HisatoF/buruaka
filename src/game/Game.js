@@ -190,24 +190,20 @@ export class Game {
       const material = hit.tag === 'world' || hit.tag === 'cover' ? 'impactConcrete' : 'impactMetal';
       this.vfx.emit( material, { position: hit.point, direction: hit.normal } );
 
-      // Decals are flat XZ quads by construction, so they can only be laid on
-      // ground-facing surfaces. Spawning one for a wall hit put a horizontal
-      // disc through the middle of the prop that was shot — and passing the
-      // hit point positionally rather than as `position` had been dropping
-      // every mark at the world origin.
-      if ( hit.normal.y > 0.7 ) {
-        this.vfx.decals.spawn( {
-          position: hit.point,
-          // The pool defaults every mark to just above y=0, so a hit on a
-          // crate lid left its chip on the ground underneath the crate.
-          y: hit.point.y + 0.012,
-          type: 'bullet',
-          radius: 0.09 + Math.random() * 0.05,
-          opacity: 0.42,
-          life: 12,
-          color: 0x2f2a3d,
-        } );
-      }
+      // Decals now orient to the surface they landed on, so wall and crate
+      // hits mark too — the arena used to come through a three-minute
+      // firefight completely spotless because every non-ground hit had to be
+      // suppressed.
+      this.vfx.decals.spawn( {
+        position: hit.point,
+        normal: hit.normal,
+        type: 'bullet',
+        radius: 0.075 + Math.random() * 0.045,
+        opacity: 0.40,
+        life: 16,
+        rotation: Math.random() * Math.PI * 2,
+        color: 0x2f2a3d,
+      } );
       this.audio?.playAt?.( 'impactConcrete', hit.point );
     }
   }
@@ -240,8 +236,8 @@ export class Game {
     this.vfx.emit( 'muzzleFlash', {
       position: muzzlePos,
       direction,
-      scale: unit.stats.kind === 'sniper' ? 0.85 : ( unit.stats.kind === 'shotgun' ? 0.75 : 0.55 ),
-      count: 0.8,
+      scale: unit.stats.kind === 'sniper' ? 1.35 : ( unit.stats.kind === 'shotgun' ? 1.25 : 1.0 ),
+      count: 0.85,
       color: unit.team === TEAM.SQUAD ? undefined : 0xffa070,
     } );
     const eject = unit.character.weapon?.ejectPort;
