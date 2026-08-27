@@ -1777,3 +1777,21 @@
    an impact flash — it is on screen for minutes at a time. */
 @keyframes low-pulse { 0%, 100% { opacity: .06 } 50% { opacity: .16 } }
 .fx__low { box-shadow: inset 0 0 clamp(24px, 2.8vw, 60px) rgba(255, 72, 96, .42) !important; }
+
+.hud-pause__row {
+  transform: skewX(12deg);
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 16px;
+}
+.hud-pause__row .btn { transform: skewX(-12deg); }
+.btn--ghost { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(35, 70, 120, .3); }
+.btn--ghost span { color: var(--ink, #21304a); }
+
+/* The popover now lives on the HUD root, so it must clear the deck and the
+   roster rather than sitting inside the title card's coordinate space. */
+.hud .settings { z-index: 13; }
+
+/* Emerald was the only saturated green in an otherwise disciplined palette. */
+.unit__bar .fill { background: linear-gradient(180deg, #6fe0a6, #2aa878) !important; }

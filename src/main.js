@@ -69,7 +69,7 @@ async function main() {
     onRestart: () => { game.restart(); hud.banner( 'OPERATION START', 'KIVOTOS PLAZA', 'wave' ); },
     onSettings: ( s ) => applySettings( s ),
     onStick: ( v ) => { input.stick.set( v.x, v.y ); },
-    onPause: () => { paused = !paused; },
+    onPause: ( on ) => setPaused( on ?? !paused ),
   } );
 
   const audio = new AudioEngine();

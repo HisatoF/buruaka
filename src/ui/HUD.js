@@ -526,7 +526,10 @@ export class HUD {
     el( 'span', null, setBtn, 'SETTINGS' );
     el( 'div', 'title__hint', title, 'WASD MOVE — DRAG TO ORBIT — 1-4 EX SKILL' );
 
-    const st = this._buildSettings( t );
+    // Parented to the HUD root rather than the title screen — the title screen
+    // is visibility:hidden during a mission, which made settings unreachable
+    // from the moment the player pressed PLAY.
+    const st = this._buildSettings( this.el );
 
     /* ---- results ---- */
     const r = el( 'div', 'hud-screen', this.el );
@@ -1369,14 +1372,29 @@ export class HUD {
   setPaused( on ) {
     if ( !this._pause ) {
       const veil = el( 'div', 'hud-pause', this.el );
-      veil.innerHTML =
-        '<div class="hud-pause__card">' +
-        '<div class="hud-pause__title">PAUSED</div>' +
-        '<div class="hud-pause__hint">ESC or P to resume</div>' +
-        '</div>';
+      const card = el( 'div', 'hud-pause__card', veil );
+      el( 'div', 'hud-pause__title', card, 'PAUSED' );
+      el( 'div', 'hud-pause__hint', card, 'ESC or P to resume' );
+
+      const row = el( 'div', 'hud-pause__row', card );
+      const settingsBtn = el( 'button', 'btn btn--sm', row );
+      settingsBtn.type = 'button';
+      el( 'span', null, settingsBtn, 'SETTINGS' );
+      settingsBtn.addEventListener( 'click', () => this._toggleSettings( true ) );
+
+      const abandon = el( 'button', 'btn btn--sm btn--ghost', row );
+      abandon.type = 'button';
+      el( 'span', null, abandon, 'RESTART' );
+      abandon.addEventListener( 'click', () => {
+        this.setPaused( false );
+        this.cb.onPause?.( false );
+        this.cb.onRestart?.();
+      } );
+
       this._pause = veil;
     }
     tog( this._pause, 'is-on', !!on );
+    if ( !on ) this._toggleSettings( false );
   }
 
   /** Live combo / score cluster — the loudest feedback element in the genre. */
