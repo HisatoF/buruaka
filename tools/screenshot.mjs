@@ -144,6 +144,16 @@ if ( ready ) {
       await page.evaluate( ( n ) => window.__capture?.( n ), name );
       // Let the deferred passes (bloom pyramid, SMAA) settle on the new frame.
       await page.waitForTimeout( Number( args.settle ?? 450 ) );
+
+      // Refuse to save a frame the page itself says is not worth saving. A
+      // lost WebGL context drops the page back to the boot or title screen,
+      // and a harness that only watches the console will report success on a
+      // screenshot of a loading spinner.
+      const health = await page.evaluate( () => window.__captureHealth?.() ?? { ok: true } );
+      if ( health.ok === false ) {
+        errors.push( `UNHEALTHY FRAME "${name}": ${JSON.stringify( health )}` );
+      }
+
       const file = path.join( OUT, `${name}.png` );
       await page.screenshot( { path: file, fullPage: args.fullPage === 'true' } );
       captured.push( file );

@@ -554,14 +554,17 @@ export function makeBrowAtlas( { cell = 256, color = 0x6b4a3a } = {} ) {
     // Each brow is a tapered stroke: thick at the inner end, thin at the tail.
     // Building it as a filled path rather than a stroked line is what gives
     // the taper; a lineWidth stroke would read as a uniform sausage.
-    const tilts = { neutral: 0.06, angry: 0.34, sad: -0.30, surprised: -0.06 };
-    const arcs = { neutral: 0.10, angry: 0.02, sad: 0.06, surprised: 0.24 };
+    // A neutral brow is nearly level with a soft arch. The previous tilt was
+    // steep enough, and the stroke heavy enough, that every character wore a
+    // permanent scowl.
+    const tilts = { neutral: 0.02, angry: 0.30, sad: -0.26, surprised: -0.04 };
+    const arcs = { neutral: 0.13, angry: 0.03, sad: 0.08, surprised: 0.26 };
     const tilt = tilts[ name ], arc = arcs[ name ];
 
     const x0 = 0.14 * cell, x1 = 0.88 * cell;
     const y0 = 0.56 * cell + tilt * cell * 0.5;
     const y1 = 0.50 * cell - tilt * cell * 0.5;
-    const t0 = 0.13 * cell, t1 = 0.035 * cell;
+    const t0 = 0.072 * cell, t1 = 0.024 * cell;
 
     ctx.fillStyle = hex( color );
     ctx.beginPath();

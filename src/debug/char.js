@@ -43,14 +43,17 @@ roster.forEach( ( key, i ) => {
   chars.push( c );
 } );
 
+/** X position of roster member `i`, so framings can never drift off-target. */
+const at = ( i ) => chars[ Math.min( i, chars.length - 1 ) ].root.position.x;
+
 const framings = {
-  lineup:  { pos: [ 0, 1.35, 4.4 ],   look: [ 0, 0.95, 0 ], fov: 38 },
-  hero:    { pos: [ -1.4, 1.30, 1.5 ], look: [ -1.42, 1.05, 0 ], fov: 30 },
-  face:    { pos: [ -1.42, 1.50, 1.30 ], look: [ -1.42, 1.47, 0 ], fov: 13 },
-  face2:   { pos: [ -0.16, 1.52, 1.30 ], look: [ -0.47, 1.47, 0 ], fov: 13 },
-  threeq:  { pos: [ 0.55, 1.35, 1.7 ], look: [ -0.47, 1.02, 0 ], fov: 32 },
-  back:    { pos: [ 0, 1.35, -3.4 ],   look: [ 0, 0.95, 0 ], fov: 38 },
-  full:    { pos: [ -1.42, 0.95, 2.5 ], look: [ -1.42, 0.85, 0 ], fov: 34 },
+  lineup:  { pos: [ 0, 1.35, 4.4 ], look: [ 0, 0.95, 0 ], fov: 38 },
+  back:    { pos: [ 0, 1.35, -3.4 ], look: [ 0, 0.95, 0 ], fov: 38 },
+  get hero()   { return { pos: [ at( 1 ) + 0.05, 1.30, 1.5 ], look: [ at( 1 ), 1.05, 0 ], fov: 30 }; },
+  get full()   { return { pos: [ at( 1 ), 0.95, 2.5 ], look: [ at( 1 ), 0.85, 0 ], fov: 34 }; },
+  get face()   { return { pos: [ at( 1 ), 1.50, 1.30 ], look: [ at( 1 ), 1.47, 0 ], fov: 13 }; },
+  get face2()  { return { pos: [ at( 2 ) + 0.30, 1.52, 1.30 ], look: [ at( 2 ), 1.47, 0 ], fov: 13 }; },
+  get threeq() { return { pos: [ at( 2 ) + 1.0, 1.35, 1.7 ], look: [ at( 2 ), 1.02, 0 ], fov: 32 }; },
 };
 
 function applyFraming( name ) {
@@ -82,5 +85,10 @@ window.__diagnostics = () => ( {
   programs: engine.renderer.info.programs?.length ?? 0,
   characters: chars.length,
   trisPerChar: Math.round( engine.renderer.info.render.triangles / chars.length ),
+} );
+window.__captureHealth = () => ( {
+  ok: !engine.renderer.getContext().isContextLost(),
+  contextLost: engine.renderer.getContext().isContextLost(),
+  characters: chars.length,
 } );
 window.__GAME_READY__ = true;

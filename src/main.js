@@ -324,6 +324,28 @@ async function main() {
     return out;
   };
 
+  /**
+   * Reports whether the page is actually in a state worth photographing.
+   *
+   * Under software rendering the WebGL context can be lost mid-run and the
+   * page falls back to the boot or title screen — and a capture harness that
+   * only checks for console errors will happily save that frame and report
+   * success. A review then gets written against pictures of a loading screen.
+   */
+  window.__captureHealth = () => {
+    const bootEl = document.getElementById( 'boot' );
+    const gl = engine.renderer.getContext();
+    return {
+      ok: !( bootEl && getComputedStyle( bootEl ).visibility !== 'hidden' && bootEl.style.display !== 'none' )
+        && !gl.isContextLost()
+        && game.phase !== 'title',
+      phase: game.phase,
+      contextLost: gl.isContextLost(),
+      bootVisible: !!bootEl && bootEl.style.display !== 'none' && getComputedStyle( bootEl ).opacity > 0.02,
+      drawCalls: engine.renderer.info.render.calls,
+    };
+  };
+
   window.__diagnostics = () => ( {
     penetrating: window.__penetration(),
     drawCalls: engine.renderer.info.render.calls,
