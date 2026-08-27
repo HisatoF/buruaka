@@ -216,26 +216,27 @@ function buildBody( design ) {
     const knee = V( sx * 0.079, 0.478, 0 );
     const ankle = V( sx * 0.081, 0.090, 0 );
 
-    const thigh = paintGeometry( limb( hip, knee, [
-      { t: 0, r: 0.085 }, { t: 0.30, r: 0.075 }, { t: 0.72, r: 0.054 }, { t: 1, r: 0.045 },
-    ], { radial: 16, capTop: true, capBottom: true, capRound: 0.7 } ), skin );
-    // The thigh straddles the stocking line, so mask it per-vertex.
     if ( sockTop > 0 ) {
-      const pos = thigh.attributes.position;
-      const mask = new Float32Array( pos.count );
-      for ( let i = 0; i < pos.count; i++ ) mask[ i ] = pos.getY( i ) > sockTop + 0.01 ? 1 : 0;
-      thigh.setAttribute( 'aOutlineMask', new THREE.BufferAttribute( mask, 1 ) );
+      // The leg simply ends at the stocking line. Widening the stocking was
+      // not enough: at the ~90 degrees of knee flexion in the run cycle,
+      // skinning pushes the thigh through it no matter how much clearance it
+      // is given, and skin against a white stocking reads as dirt. The last
+      // ring flares to just under the stocking's mouth so it plugs the
+      // opening rather than leaving a visible ring of daylight.
+      const cutT = ( hip.y - sockTop ) / ( hip.y - knee.y );
+      const cut = V(
+        hip.x + ( knee.x - hip.x ) * cutT,
+        sockTop,
+        hip.z + ( knee.z - hip.z ) * cutT
+      );
+      parts.push( allowOutline( paintGeometry( limb( hip, cut, [
+        { t: 0, r: 0.085 }, { t: 0.42, r: 0.076 }, { t: 0.82, r: 0.068 }, { t: 1, r: 0.066 },
+      ], { radial: 16, capTop: true, capBottom: true, capRound: 0.7 } ), skin ) ) );
     } else {
-      allowOutline( thigh );
-    }
-    parts.push( thigh );
+      parts.push( allowOutline( paintGeometry( limb( hip, knee, [
+        { t: 0, r: 0.085 }, { t: 0.30, r: 0.075 }, { t: 0.72, r: 0.054 }, { t: 1, r: 0.045 },
+      ], { radial: 16, capTop: true, capBottom: true, capRound: 0.7 } ), skin ) ) );
 
-    // When a stocking covers the whole shin, the shin is not drawn at all.
-    // Suppressing only its outline was not enough: at a bent knee the skinned
-    // leg pokes through the skinned sock, and skin against a white stocking
-    // reads as mottling. The stocking is closed at the ankle by the shoe and
-    // filled at the top by the thigh, so nothing shows through the gap.
-    if ( sockTop <= 0 ) {
       parts.push( allowOutline( paintGeometry( limb( knee, ankle, [
         { t: 0, r: 0.050 }, { t: 0.22, r: 0.055 }, { t: 0.70, r: 0.036 }, { t: 1, r: 0.028 },
       ], { radial: 14, capTop: false, capBottom: true, capRound: 0.8 } ), skin ) ) );
