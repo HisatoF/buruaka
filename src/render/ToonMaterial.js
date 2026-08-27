@@ -407,6 +407,7 @@ uniform float uMinPixels;
 uniform vec2  uResolution;
 
 attribute vec3 aSmoothNormal;
+attribute float aOutlineMask;
 
 #ifdef USE_VERTEX_TINT
   attribute vec3 tint;
@@ -414,6 +415,14 @@ attribute vec3 aSmoothNormal;
 #endif
 
 void main() {
+  // Geometry hidden under clothing still grows a hull, and a constant-pixel
+  // outline is a large world-space offset up close — so a leg's stroke punches
+  // through the sock covering it and mottles the garment. Marked vertices are
+  // pushed outside the clip volume so their triangles are dropped entirely.
+  if ( aOutlineMask < 0.5 ) {
+    gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 );
+    return;
+  }
   #ifdef USE_VERTEX_TINT
     vTint = tint;
   #endif
@@ -505,6 +514,27 @@ export function createOutlineMaterial( {
  * reading as separate materials. A per-part texture atlas would do the same
  * job but bleeds across cells under mipmapping; a vertex attribute cannot.
  */
+/**
+ * Excludes a geometry from the inverted-hull outline pass.
+ *
+ * Use on anything that is always covered by another layer — the torso beneath
+ * a shirt, the leg beneath a sock. The covered surface still shades and still
+ * fills the silhouette; it just stops contributing a stroke that has nowhere
+ * to go but through the garment on top of it.
+ */
+export function suppressOutline( geometry ) {
+  const count = geometry.attributes.position.count;
+  geometry.setAttribute( 'aOutlineMask', new THREE.BufferAttribute( new Float32Array( count ), 1 ) );
+  return geometry;
+}
+
+/** Marks a geometry as outlined. Needed so merges keep a consistent attribute set. */
+export function allowOutline( geometry ) {
+  const count = geometry.attributes.position.count;
+  geometry.setAttribute( 'aOutlineMask', new THREE.BufferAttribute( new Float32Array( count ).fill( 1 ), 1 ) );
+  return geometry;
+}
+
 export function paintGeometry( geometry, hexColor ) {
   const c = new THREE.Color( hexColor );
   const count = geometry.attributes.position.count;

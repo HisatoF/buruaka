@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createToonMaterial, createOutlineMaterial, computeSmoothNormals, paintGeometry } from '../render/ToonMaterial.js';
+import { createToonMaterial, createOutlineMaterial, computeSmoothNormals, paintGeometry, suppressOutline, allowOutline } from '../render/ToonMaterial.js';
 import { buildSkeleton, skinGeometry, skinRigid, SKIN_SEGMENTS } from './Rig.js';
 import { buildHair, HEAD } from './Hair.js';
 import { buildWeapon } from './Weapon.js';
@@ -12,6 +12,11 @@ import {
 } from './Geometry.js';
 
 const V = ( x, y, z ) => new THREE.Vector3( x, y, z );
+
+/** Guarantees an `aOutlineMask` attribute so merged geometries stay uniform. */
+function ensureOutlineMask( geo ) {
+  return geo.attributes.aOutlineMask ? geo : allowOutline( geo );
+}
 
 /* ---------------------------------------------------------------------- */
 /* Palettes                                                                */
@@ -145,8 +150,10 @@ function buildBody( design ) {
 
   // --- torso -----------------------------------------------------------
   // Kept as skin because the collar opening and the gap under a short sleeve
-  // both expose it; the shirt is a separate, slightly larger shell.
-  parts.push( paintGeometry( profileTube( [
+  // both expose it; the shirt is a separate, slightly larger shell. Excluded
+  // from the outline pass — it is always under cloth, so its stroke has
+  // nowhere to go but through the shirt.
+  parts.push( suppressOutline( paintGeometry( profileTube( [
     { y: 0.845, rx: 0.118, rz: 0.082 },
     { y: 0.940, rx: 0.100, rz: 0.072 },
     { y: 1.020, rx: 0.096, rz: 0.070 },
@@ -154,7 +161,7 @@ function buildBody( design ) {
     { y: 1.200, rx: 0.128, rz: 0.086, cz: 0.008 },
     { y: 1.272, rx: 0.124, rz: 0.078 },
     { y: 1.310, rx: 0.096, rz: 0.062 },
-  ], { radial: 20, capTop: true, capBottom: true, capRound: 0.4 } ), skin ) );
+  ], { radial: 20, capTop: true, capBottom: true, capRound: 0.4 } ), skin ) ) );
 
   // --- arms ------------------------------------------------------------
   for ( const sx of [ -1, 1 ] ) {
@@ -200,21 +207,42 @@ function buildBody( design ) {
   }
 
   // --- legs ------------------------------------------------------------
+  // Split at the stocking line: everything below is permanently covered, so
+  // it keeps its shading but contributes no outline.
+  const sockTop = design.outfit.socks ? ( design.outfit.skirt ? 0.590 : 0.300 ) : -1;
+
   for ( const sx of [ -1, 1 ] ) {
     const hip = V( sx * 0.076, 0.880, 0 );
     const knee = V( sx * 0.079, 0.478, 0 );
     const ankle = V( sx * 0.081, 0.090, 0 );
 
-    parts.push( paintGeometry( limb( hip, knee, [
-      { t: 0, r: 0.085 }, { t: 0.30, r: 0.076 }, { t: 0.72, r: 0.058 }, { t: 1, r: 0.049 },
-    ], { radial: 16, capTop: true, capBottom: true, capRound: 0.7 } ), skin ) );
+    const thigh = paintGeometry( limb( hip, knee, [
+      { t: 0, r: 0.085 }, { t: 0.30, r: 0.075 }, { t: 0.72, r: 0.054 }, { t: 1, r: 0.045 },
+    ], { radial: 16, capTop: true, capBottom: true, capRound: 0.7 } ), skin );
+    // The thigh straddles the stocking line, so mask it per-vertex.
+    if ( sockTop > 0 ) {
+      const pos = thigh.attributes.position;
+      const mask = new Float32Array( pos.count );
+      for ( let i = 0; i < pos.count; i++ ) mask[ i ] = pos.getY( i ) > sockTop + 0.01 ? 1 : 0;
+      thigh.setAttribute( 'aOutlineMask', new THREE.BufferAttribute( mask, 1 ) );
+    } else {
+      allowOutline( thigh );
+    }
+    parts.push( thigh );
 
-    parts.push( paintGeometry( limb( knee, ankle, [
-      { t: 0, r: 0.050 }, { t: 0.22, r: 0.055 }, { t: 0.70, r: 0.036 }, { t: 1, r: 0.028 },
-    ], { radial: 14, capTop: false, capBottom: true, capRound: 0.8 } ), skin ) );
+    // When a stocking covers the whole shin, the shin is not drawn at all.
+    // Suppressing only its outline was not enough: at a bent knee the skinned
+    // leg pokes through the skinned sock, and skin against a white stocking
+    // reads as mottling. The stocking is closed at the ankle by the shoe and
+    // filled at the top by the thigh, so nothing shows through the gap.
+    if ( sockTop <= 0 ) {
+      parts.push( allowOutline( paintGeometry( limb( knee, ankle, [
+        { t: 0, r: 0.050 }, { t: 0.22, r: 0.055 }, { t: 0.70, r: 0.036 }, { t: 1, r: 0.028 },
+      ], { radial: 14, capTop: false, capBottom: true, capRound: 0.8 } ), skin ) ) );
+    }
   }
 
-  return mergeGeometries( parts );
+  return mergeGeometries( parts.map( ensureOutlineMask ) );
 }
 
 /**
@@ -353,13 +381,13 @@ function buildOutfit( design ) {
       const a = V( sx * 0.0795, top, 0 );
       const b = V( sx * 0.081, 0.086, 0 );
       parts.push( paintGeometry( limb( a, b, [
-        { t: 0, r: 0.063 }, { t: 0.05, r: 0.067 }, { t: 0.30, r: 0.064 }, { t: 0.78, r: 0.045 }, { t: 1, r: 0.037 },
-      ], { radial: 14, capTop: false, capBottom: false } ), o.socks ) );
+        { t: 0, r: 0.071 }, { t: 0.05, r: 0.075 }, { t: 0.30, r: 0.070 }, { t: 0.78, r: 0.048 }, { t: 1, r: 0.039 },
+      ], { radial: 14, capTop: false, capBottom: true, capRound: 0.7 } ), o.socks ) );
 
       // The elastic band at the top, a shade brighter — a small detail that
       // does a lot of work at silhouette scale.
       parts.push( paintGeometry( limb( a, V( sx * 0.0795, top - 0.022, 0 ), [
-        { t: 0, r: 0.0645 }, { t: 1, r: 0.0685 },
+        { t: 0, r: 0.0725 }, { t: 1, r: 0.0765 },
       ], { radial: 14, capTop: false, capBottom: false } ), o.sockBand ?? o.trim ) );
     }
   }
@@ -376,9 +404,9 @@ function buildOutfit( design ) {
   }
 
   return {
-    core: mergeGeometries( parts ),
-    sleeveL: mergeGeometries( sleeves[ '-1' ] ),
-    sleeveR: mergeGeometries( sleeves[ '1' ] ),
+    core: mergeGeometries( parts.map( ensureOutlineMask ) ),
+    sleeveL: mergeGeometries( sleeves[ '-1' ].map( ensureOutlineMask ) ),
+    sleeveR: mergeGeometries( sleeves[ '1' ].map( ensureOutlineMask ) ),
   };
 }
 
@@ -447,6 +475,65 @@ function buildHalo( type, color ) {
   }
 
   return group;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Contact shadow                                                          */
+/* ---------------------------------------------------------------------- */
+
+let _contactTex = null;
+let _contactMat = null;
+
+/**
+ * A soft blob laid flat under a character's feet.
+ *
+ * The key light comes in at an angle, so the real cast shadow lands well to
+ * one side and a character reads as hovering — especially mid-stride, when
+ * both feet are off the ground. A blob directly underneath is what actually
+ * plants them. Texture and material are module-level singletons: every unit
+ * shares one draw state and differs only by transform.
+ */
+function contactShadow() {
+  if ( !_contactTex ) {
+    const size = 128;
+    const canvas = typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas( size, size )
+      : Object.assign( document.createElement( 'canvas' ), { width: size, height: size } );
+    const ctx = canvas.getContext( '2d' );
+    const g = ctx.createRadialGradient( size / 2, size / 2, 0, size / 2, size / 2, size / 2 );
+    // Squared falloff: a linear gradient reads as a grey disc with an edge,
+    // not as contact.
+    g.addColorStop( 0.00, 'rgba(46,40,72,0.62)' );
+    g.addColorStop( 0.45, 'rgba(46,40,72,0.30)' );
+    g.addColorStop( 0.78, 'rgba(46,40,72,0.07)' );
+    g.addColorStop( 1.00, 'rgba(46,40,72,0)' );
+    ctx.fillStyle = g;
+    ctx.fillRect( 0, 0, size, size );
+
+    _contactTex = new THREE.CanvasTexture( canvas );
+    _contactTex.colorSpace = THREE.SRGBColorSpace;
+
+    _contactMat = new THREE.MeshBasicMaterial( {
+      map: _contactTex,
+      transparent: true,
+      depthWrite: false,
+      // Multiplicative so the blob darkens the ground rather than painting a
+      // grey patch over whatever colour it happens to be sitting on.
+      blending: THREE.MultiplyBlending,
+      // three requires this for MultiplyBlending; the gradient canvas is
+      // already authored with its alpha baked into the colour.
+      premultipliedAlpha: true,
+      toneMapped: false,
+    } );
+  }
+
+  const mesh = new THREE.Mesh( new THREE.PlaneGeometry( 1, 1 ), _contactMat );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.02;
+  mesh.renderOrder = -1;
+  mesh.frustumCulled = false;
+  mesh.name = 'contactShadow';
+  return mesh;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -595,13 +682,18 @@ export class Character {
     this.outlineMaterial = outlineMat;
 
     // --- body + outfit ---------------------------------------------------
+    // Every geometry entering a merge must carry the same attribute set, so
+    // anything not explicitly masked is marked as outlined first.
     const outfit = buildOutfit( design );
-    const bodyGeo = computeSmoothNormals( mergeGeometries( [ buildBody( design ), outfit.core ] ) );
+    const bodyGeo = computeSmoothNormals( mergeGeometries( [
+      ensureOutlineMask( buildBody( design ) ),
+      ensureOutlineMask( outfit.core ),
+    ] ) );
     skinGeometry( bodyGeo, order, { segments: allSegments, falloff: 2.6 } );
 
     // Sleeves ride the arm chain only, weighted hard toward the upper arm.
     for ( const side of [ 'L', 'R' ] ) {
-      const geo = computeSmoothNormals( outfit[ `sleeve${side}` ] );
+      const geo = computeSmoothNormals( ensureOutlineMask( outfit[ `sleeve${side}` ] ) );
       skinGeometry( geo, order, {
         segments: allSegments,
         only: [ `shoulder${side}`, `upperArm${side}`, `lowerArm${side}` ],
@@ -646,6 +738,7 @@ export class Character {
     } );
     planarFrontUV( headGeo, { width: 0.285, height: 0.300, centerY: HEAD.centerY, arcCorrect: 0.30 } );
     computeSmoothNormals( headGeo );
+    ensureOutlineMask( headGeo );
     skinRigid( headGeo, order, 'head' );
     const headMat = createToonMaterial( {
       color: 0xffffff,
@@ -663,13 +756,13 @@ export class Character {
 
     // --- hair ------------------------------------------------------------
     const hairGeos = [];
-    const hs = computeSmoothNormals( hair.staticGeometry );
+    const hs = computeSmoothNormals( ensureOutlineMask( hair.staticGeometry ) );
     paintGeometry( hs, design.hair.color );
     skinRigid( hs, order, 'head' );
     hairGeos.push( hs );
 
     if ( hair.dynamicGeometry ) {
-      const hd = computeSmoothNormals( hair.dynamicGeometry );
+      const hd = computeSmoothNormals( ensureOutlineMask( hair.dynamicGeometry ) );
       paintGeometry( hd, design.hair.color );
       skinGeometry( hd, order, { segments: hair.segments, falloff: 2.0 } );
       hairGeos.push( hd );
@@ -745,6 +838,14 @@ export class Character {
         colliders: this.bodyColliders,
       } );
     } );
+
+    // Grounding blob, parented to the root so it tracks the character but
+    // stays flat on the ground regardless of the body's pose.
+    this.contactShadow = contactShadow();
+    this.contactShadow.scale.setScalar( 0.86 * ( design.scale ?? 1 ) );
+    root.add( this.contactShadow );
+
+    this.restPoseHipY = byName.hips.position.y;
 
     this.animator = new Animator( this );
     if ( this.animatorGrips ) {
@@ -921,6 +1022,16 @@ export class Character {
     updateBodyColliders( this.bodyColliders );
     for ( const chain of this.springChains ) chain.update( dt );
 
+    // The blob tightens and darkens as the hips drop, which is what sells a
+    // footfall; it also shrinks away as a downed character settles.
+    if ( this.contactShadow ) {
+      const hipY = this.bones.hips.position.y;
+      const lift = THREE.MathUtils.clamp( ( hipY - this.restPoseHipY ) * 3.0, -0.35, 0.55 );
+      const s = ( 0.86 - lift * 0.22 ) * ( this.design.scale ?? 1 );
+      this.contactShadow.scale.set( s, s, s );
+      this.contactShadow.visible = this.quality >= 1;
+    }
+
     if ( this.halo ) {
       // A slow bob and counter-rotation. Static halos read as props.
       this.halo.position.y = HEAD.top - 1.392 + 0.115 + Math.sin( elapsed * 1.7 ) * 0.006;
@@ -935,6 +1046,7 @@ export class Character {
       if ( outline ) outline.visible = level >= 1;
       m.castShadow = level >= 1;
     }
+    if ( this.contactShadow ) this.contactShadow.visible = level >= 1;
   }
 
   onResize( w, h, pr ) {
