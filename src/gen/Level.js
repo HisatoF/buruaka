@@ -207,6 +207,122 @@ function building( w, h, d, { bodyColor, trimColor, floors = 3, windowColor } ) 
   return mergeGeometries( parts );
 }
 
+
+/* ---------------------------------------------------------------------- */
+/* Street dressing                                                         */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * A vending machine — the single most load-bearing prop in any Japanese
+ * street scene. Bright front panel, a lit product grid, a dark base.
+ */
+function vendingMachine( color = 0xd9534f ) {
+  const parts = [];
+  parts.push( paintGeometry( roundedBox( 0.78, 1.82, 0.62, 0.05, 2 ), color ) );
+  parts.push( paintGeometry( xform( roundedBox( 0.80, 0.16, 0.64, 0.03, 1 ), { position: [ 0, -0.83, 0 ] } ), 0x33383f ) );
+  // Product window with a grid of cans.
+  parts.push( paintGeometry( xform( roundedBox( 0.56, 0.86, 0.05, 0.02, 1 ), { position: [ -0.06, 0.28, 0.31 ] } ), 0x2b3140 ) );
+  for ( let r = 0; r < 3; r++ ) for ( let c = 0; c < 4; c++ ) {
+    const can = roundedBox( 0.085, 0.13, 0.03, 0.012, 1 );
+    can.translate( -0.27 + c * 0.14, 0.60 - r * 0.28, 0.335 );
+    parts.push( paintGeometry( can, [ 0xffd54a, 0x7fd6ff, 0xff8a9b, 0x9ee08a ][ ( r + c ) % 4 ] ) );
+  }
+  // Selector column and delivery slot.
+  parts.push( paintGeometry( xform( roundedBox( 0.14, 0.86, 0.06, 0.02, 1 ), { position: [ 0.29, 0.28, 0.32 ] } ), 0xf2f4f8 ) );
+  parts.push( paintGeometry( xform( roundedBox( 0.50, 0.16, 0.06, 0.02, 1 ), { position: [ -0.06, -0.42, 0.32 ] } ), 0x22262f ) );
+  return mergeGeometries( parts );
+}
+
+/** A plaza bench: slatted seat, two cast legs. */
+function bench( length = 1.7 ) {
+  const parts = [];
+  for ( let i = 0; i < 3; i++ ) {
+    const slat = roundedBox( length, 0.055, 0.13, 0.02, 1 );
+    slat.translate( 0, 0.44, -0.16 + i * 0.16 );
+    parts.push( paintGeometry( slat, 0xc9a06a ) );
+  }
+  for ( let i = 0; i < 2; i++ ) {
+    const back = roundedBox( length, 0.055, 0.11, 0.02, 1 );
+    back.rotateX( -0.35 );
+    back.translate( 0, 0.66 + i * 0.14, -0.22 - i * 0.05 );
+    parts.push( paintGeometry( back, 0xc9a06a ) );
+  }
+  for ( const sx of [ -1, 1 ] ) {
+    const leg = roundedBox( 0.07, 0.44, 0.42, 0.02, 1 );
+    leg.translate( sx * ( length / 2 - 0.14 ), 0.22, -0.04 );
+    parts.push( paintGeometry( leg, 0x4a5260 ) );
+  }
+  return mergeGeometries( parts );
+}
+
+/** A shop awning with a scalloped valance, plus its signboard above. */
+function shopFront( width = 4.2, signColor = 0x4a8fd0, awningColor = 0xe86a6a ) {
+  const parts = [];
+
+  const canopy = roundedBox( width, 0.10, 1.15, 0.03, 1 );
+  canopy.rotateX( -0.22 );
+  canopy.translate( 0, 2.62, 0.62 );
+  parts.push( paintGeometry( canopy, awningColor ) );
+
+  // Scalloped valance: a row of half-discs along the leading edge.
+  const scallops = Math.max( 4, Math.round( width / 0.42 ) );
+  for ( let i = 0; i < scallops; i++ ) {
+    const x = ( ( i + 0.5 ) / scallops - 0.5 ) * width;
+    const d = new THREE.SphereGeometry( 0.16, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2 );
+    d.scale( 1, 0.9, 0.34 );
+    d.rotateX( Math.PI );
+    d.translate( x, 2.44, 1.14 );
+    parts.push( paintGeometry( d, awningColor ) );
+  }
+
+  // Signboard, with two accent bands standing in for lettering.
+  parts.push( paintGeometry( xform( roundedBox( width * 0.86, 0.62, 0.14, 0.04, 1 ),
+    { position: [ 0, 3.34, 0.24 ] } ), signColor ) );
+  parts.push( paintGeometry( xform( roundedBox( width * 0.52, 0.13, 0.05, 0.02, 1 ),
+    { position: [ -width * 0.10, 3.44, 0.32 ] } ), 0xfdfdff ) );
+  parts.push( paintGeometry( xform( roundedBox( width * 0.30, 0.09, 0.05, 0.02, 1 ),
+    { position: [ -width * 0.16, 3.24, 0.32 ] } ), 0xfdfdff ) );
+
+  // Recessed entrance.
+  parts.push( paintGeometry( xform( roundedBox( width * 0.44, 2.20, 0.12, 0.03, 1 ),
+    { position: [ 0, 1.10, 0.10 ] } ), 0x8fc9e8 ) );
+  parts.push( paintGeometry( xform( roundedBox( width * 0.46, 0.12, 0.16, 0.03, 1 ),
+    { position: [ 0, 2.20, 0.12 ] } ), 0xf2f4f8 ) );
+
+  return mergeGeometries( parts );
+}
+
+/** A sign gantry spanning the street — the arena's only real verticality. */
+function gantry( span = 12, height = 5.6 ) {
+  const parts = [];
+  for ( const sx of [ -1, 1 ] ) {
+    parts.push( paintGeometry( xform( profileTube( [
+      { y: 0, rx: 0.20 }, { y: 0.3, rx: 0.13 }, { y: height, rx: 0.11 },
+    ], { radial: 10, capTop: true, capBottom: false } ), { position: [ sx * span / 2, 0, 0 ] } ), LEVEL_COLORS.pole ) );
+  }
+  const beam = roundedBox( span, 0.30, 0.26, 0.05, 1 );
+  beam.translate( 0, height - 0.15, 0 );
+  parts.push( paintGeometry( beam, LEVEL_COLORS.pole ) );
+
+  const board = roundedBox( span * 0.52, 1.05, 0.14, 0.04, 1 );
+  board.translate( 0, height - 0.82, 0.06 );
+  parts.push( paintGeometry( board, 0x2f5f96 ) );
+  for ( let i = 0; i < 3; i++ ) {
+    const bar = roundedBox( span * ( 0.30 - i * 0.07 ), 0.14, 0.05, 0.02, 1 );
+    bar.translate( -span * 0.06, height - 0.60 - i * 0.24, 0.14 );
+    parts.push( paintGeometry( bar, 0xeef4fa ) );
+  }
+  return mergeGeometries( parts );
+}
+
+/** A short bollard. Cheap, and it breaks up bare paving. */
+function bollard() {
+  const g = profileTube( [
+    { y: 0, rx: 0.11 }, { y: 0.06, rx: 0.09 }, { y: 0.72, rx: 0.075 }, { y: 0.80, rx: 0.09 },
+  ], { radial: 10, capTop: true, capBottom: false, capRound: 0.6 } );
+  return paintGeometry( g, 0x9aa4b4 );
+}
+
 /* ---------------------------------------------------------------------- */
 /* Layout                                                                  */
 /* ---------------------------------------------------------------------- */
@@ -266,6 +382,36 @@ const COVER_LAYOUT = [
   { kind: 'barrier', x: 9, z: 13, ry: 0, len: 3.0 },
 ];
 
+/**
+ * Street dressing. Placed asymmetrically on purpose: the cover layout has to
+ * be fair to both sides, but the scenery does not, and a perfectly mirrored
+ * arena reads as a diorama rather than as a place.
+ */
+const DRESSING_LAYOUT = [
+  { kind: 'shopFront', x: -25.6, z: -8, ry: Math.PI / 2, w: 5.0, sign: 0x4a8fd0, awning: 0xe86a6a },
+  { kind: 'shopFront', x: -25.6, z: 4, ry: Math.PI / 2, w: 4.4, sign: 0xf0a03c, awning: 0x5bb2a0 },
+  { kind: 'shopFront', x: 25.6, z: -3, ry: -Math.PI / 2, w: 5.0, sign: 0x5bb2a0, awning: 0xf0c04c },
+  { kind: 'shopFront', x: 25.6, z: 11, ry: -Math.PI / 2, w: 4.2, sign: 0xe86a6a, awning: 0x4a8fd0 },
+
+  { kind: 'vending', x: -23.4, z: -3.2, ry: Math.PI / 2, color: 0xd9534f },
+  { kind: 'vending', x: -23.4, z: -2.3, ry: Math.PI / 2, color: 0x3f8fd0 },
+  { kind: 'vending', x: 23.4, z: 7.6, ry: -Math.PI / 2, color: 0xf0a03c },
+
+  { kind: 'bench', x: -18.5, z: 6.0, ry: 0.1, len: 1.9 },
+  { kind: 'bench', x: 19.2, z: -6.5, ry: -0.15, len: 1.9 },
+  { kind: 'bench', x: -9.0, z: 19.0, ry: Math.PI, len: 1.7 },
+
+  { kind: 'gantry', x: 0, z: -13.5, span: 11.5, height: 5.6 },
+];
+
+// Bollards along both kerbs, skipped where the road crossing is.
+for ( let i = -6; i <= 6; i++ ) {
+  if ( Math.abs( i ) < 2 ) continue;
+  for ( const sx of [ -1, 1 ] ) {
+    DRESSING_LAYOUT.push( { kind: 'bollard', x: sx * 4.45, z: i * 3.6 } );
+  }
+}
+
 const BUILDING_LAYOUT = [
   { x: -33, z: -14, w: 14, h: 16, d: 18, floors: 4, body: 'buildingA' },
   { x: -33, z: 10, w: 14, h: 12, d: 20, floors: 3, body: 'buildingB' },
@@ -301,6 +447,7 @@ export class Level {
 
     this._buildGround( opts.quality ?? 2 );
     this._buildProps();
+    this._buildDressing();
     this._buildBuildings();
     this._buildBoundary();
     this._buildSpawns();
@@ -524,6 +671,44 @@ export class Level {
         g.translate( x, 0, z );
         parts.push( g );
         this.physics.addCylinder( V( x, 2.6, z ), 0.14, 5.2, { tag: 'prop' } );
+      }
+    }
+
+    const mat = createToonMaterial( this._toonProps() );
+    this._materials.push( mat );
+    this._add( mergeGeometries( parts ), mat );
+  }
+
+  /**
+   * Scenery. None of it takes a collider except the gantry legs and the
+   * vending machines — a bollard or a bench you cannot walk over would break
+   * the movement read for no visual gain, and the arena's fairness comes from
+   * the cover layout, not from the dressing.
+   */
+  _buildDressing() {
+    const parts = [];
+
+    for ( const d of DRESSING_LAYOUT ) {
+      let geo = null;
+      switch ( d.kind ) {
+        case 'shopFront': geo = shopFront( d.w ?? 4.2, d.sign, d.awning ); break;
+        case 'vending':   geo = vendingMachine( d.color ); break;
+        case 'bench':     geo = bench( d.len ?? 1.7 ); break;
+        case 'gantry':    geo = gantry( d.span ?? 12, d.height ?? 5.6 ); break;
+        case 'bollard':   geo = bollard(); break;
+        default: continue;
+      }
+      if ( d.ry ) geo.rotateY( d.ry );
+      const y = d.kind === 'vending' ? 0.91 : 0;
+      geo.translate( d.x, y, d.z );
+      parts.push( geo );
+
+      if ( d.kind === 'vending' ) {
+        this.physics.addBox( V( d.x, 0.91, d.z ), V( 0.42, 0.91, 0.34 ), { tag: 'prop' } );
+      } else if ( d.kind === 'gantry' ) {
+        for ( const sx of [ -1, 1 ] ) {
+          this.physics.addCylinder( V( d.x + sx * ( d.span ?? 12 ) / 2, 2.8, d.z ), 0.18, 5.6, { tag: 'prop' } );
+        }
       }
     }
 
