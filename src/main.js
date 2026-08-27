@@ -223,15 +223,17 @@ async function main() {
     // shipping container, and a review shot of the inside of a container
     // tells nobody anything.
     for ( const flank of [ 1, -1 ] ) {
-      for ( const height of [ 3.4, 4.6, 6.2, 8.5 ] ) {
+      for ( const dist of [ 7, 9, 11.5 ] ) {
+      for ( const height of [ 2.8, 3.6, 4.8, 6.4 ] ) {
         const pos = new THREE.Vector3(
-          mid.x + side.x * 9 * flank - axis.x * 3,
+          mid.x + side.x * dist * flank - axis.x * 3,
           height,
-          mid.z + side.z * 9 * flank - axis.z * 3
+          mid.z + side.z * dist * flank - axis.z * 3
         );
         if ( game.physics.lineOfSight( pos, look, 1 /* LAYER_STATIC */ ) ) {
           return { pos: [ pos.x, pos.y, pos.z ], look: [ look.x, look.y, look.z ], fov: 40 };
         }
+      }
       }
     }
     // Nothing clear: fall back to straight overhead, which always is.
@@ -265,7 +267,36 @@ async function main() {
   window.__game = game;
   window.__audio = audio;
   window.__engine = engine;
+  /**
+   * Counts units whose capsule is actually intersecting a static collider.
+   * Standing tight against a crate and clipping through it look identical
+   * from an elevated camera, so this measures it instead of guessing.
+   */
+  window.__penetration = () => {
+    const out = [];
+    for ( const u of game.units ) {
+      const p = u.body.position;
+      const r = u.body.radius;
+      const top = p.y + u.body.height;
+      for ( const c of game.physics.colliders ) {
+        if ( c.tag === 'world' ) continue;   // arena shell and buildings
+        // Closest point on the box to the capsule's vertical axis.
+        const cx = Math.max( c.minX, Math.min( p.x, c.maxX ) );
+        const cz = Math.max( c.minZ, Math.min( p.z, c.maxZ ) );
+        const cy = Math.max( c.minY, Math.min( ( p.y + top ) * 0.5, c.maxY ) );
+        if ( cy < c.minY || cy > c.maxY ) continue;
+        if ( top < c.minY || p.y > c.maxY ) continue;
+        const d = Math.hypot( p.x - cx, p.z - cz );
+        if ( d < r - 0.02 ) {
+          out.push( { unit: u.name, tag: c.tag, depth: +( r - d ).toFixed( 3 ) } );
+        }
+      }
+    }
+    return out;
+  };
+
   window.__diagnostics = () => ( {
+    penetrating: window.__penetration(),
     drawCalls: engine.renderer.info.render.calls,
     triangles: engine.renderer.info.render.triangles,
     programs: engine.renderer.info.programs?.length ?? 0,

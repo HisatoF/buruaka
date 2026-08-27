@@ -1743,3 +1743,15 @@
 @media (prefers-reduced-motion: reduce) {
   .combo.is-on { animation: none; }
 }
+
+/* Raising the FX layer above the HUD (so the flash actually frames it) also
+   put the low-HP pulse in front of everything, where a 0.5 peak on saturated
+   red washed the whole scene. Tighter inset, cooler alpha, lower peak. */
+.fx__low {
+  box-shadow: inset 0 0 clamp(28px, 3.4vw, 72px) rgba(255, 72, 96, .5) !important;
+}
+@keyframes low-pulse { 0%, 100% { opacity: .10 } 50% { opacity: .26 } }
+@media (max-width: 700px) {
+  .hud .fx__low.on { opacity: .3; }
+}
+.fx__hit { opacity: .55; }

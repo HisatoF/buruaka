@@ -483,12 +483,16 @@ export class Level {
       const centerY = c.kind === 'barrier' ? 0.45 : ( c.kind === 'crate' ? ( c.size ?? 1 ) / 2 : ( c.kind === 'container' ? 1.3 : 0.31 ) );
       this.physics.addBox( V( c.x, centerY, c.z ), half, { tag } );
 
-      // Cover points: four standing spots, one per face, offset clear of the
-      // collider so a unit can actually stand there.
+      // Cover points: four standing spots, one per face. The offset is
+      // generous on purpose — a measured penetration check confirms units
+      // never actually enter a prop, but standing flush against one makes the
+      // lower body vanish behind it while the torso draws in front, which
+      // reads as clipping from an elevated camera. Standing a clear body-width
+      // out both looks right and makes "who is in cover" legible.
       const height = half.y * 2;
       for ( const [ dx, dz ] of [ [ 1, 0 ], [ -1, 0 ], [ 0, 1 ], [ 0, -1 ] ] ) {
         this.coverPoints.push( {
-          position: V( c.x + dx * ( half.x + 0.55 ), 0, c.z + dz * ( half.z + 0.55 ) ),
+          position: V( c.x + dx * ( half.x + 0.88 ), 0, c.z + dz * ( half.z + 0.88 ) ),
           normal: V( dx, 0, dz ),
           height,
           // Chest-high cover you can shoot over is worth more than a wall
