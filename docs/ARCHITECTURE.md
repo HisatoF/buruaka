@@ -92,6 +92,37 @@ export const PALETTE = {
 
 Every system exposes `setQuality(level)` with `0 = potato, 1 = balanced, 2 = maximum`.
 
+## Hard-won gotchas
+
+Two of these cost a full review round each. They are guarded by
+`tools/tests/shaders.test.mjs` now, but they are worth knowing.
+
+**A backtick inside a `/* glsl */` template literal terminates the string.**
+The rest of the shader is then parsed as JavaScript and the file fails to load
+in a way that points at a line of GLSL. This has happened twice in this repo.
+
+**`THREE.BackSide` negates your normal.** three sets
+`flipSided: material.side === BackSide`, which defines `FLIP_SIDED`, which
+makes `<defaultnormal_vertex>` negate `transformedNormal`. An inverted-hull
+outline that steers by it expands *inward*: no outline renders, and the
+collapsed hull z-fights out through thin geometry, which looks like stripes on
+hair and sawtooth speckle on hems. Steer by `normalMatrix * objectNormal`
+instead — `objectNormal` is already skinned by `<skinnormal_vertex>` and is not
+touched by the flip.
+
+**`receiveShadow = false` does nothing for a custom `ShaderMaterial`.** In
+r185 `USE_SHADOWMAP` is defined purely from `renderer.shadowMap.enabled`, with
+no per-object gate. A shader that samples the shadow map samples it regardless.
+Gate it yourself with a uniform.
+
+**Ramp tints are multipliers, not colours.** Passing them through
+`new THREE.Color(hex)` gamma-decodes them, so `0x999999` becomes 0.33 rather
+than 0.6 and every saturated dark crushes to black. Use
+`setHex(v, THREE.LinearSRGBColorSpace)`.
+
+**Grade in gamma space, not linear.** Applying contrast around a 0.5 pivot to
+linear radiance takes a navy at 0.055 down to 0.015.
+
 ## Verification
 
 `node tools/screenshot.mjs [--shots a,b] [--width W] [--height H]` boots a dev

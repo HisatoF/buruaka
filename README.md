@@ -81,21 +81,51 @@ cannot tunnel a thin wall.
 ## Verification
 
 ```bash
-node tools/screenshot.mjs --play 55 --shots game,firefight,portrait   # renders + fails on any console error
-node tools/perf.mjs --play 60                                          # frame-time distribution
-node tools/tests/physics.test.mjs                                      # collision, ballistics, queries
-node tools/tests/ik.test.mjs                                           # two-bone IK reach and elbow orientation
+node tools/tests/shaders.test.mjs        # GLSL guards (see below)
+node tools/tests/physics.test.mjs        # collision, ballistics, queries, bench
+node tools/tests/ik.test.mjs             # two-bone IK reach and elbow orientation
+node tools/tests/penetration.test.mjs    # samples a crowded wave for interpenetration
+node tools/tests/gameflow.test.mjs       # boss spawn, status effects, in-process restart
+node tools/perf.mjs --play 60            # simulation cost + draw calls
+
+node tools/screenshot.mjs --play 55 --shots game,firefight,overShoulder
+node tools/screenshot.mjs --play 40 --wave 8 --shots game     # the boss encounter
 ```
 
 `tools/screenshot.mjs` boots a dev server, renders in headless Chromium and
-exits non-zero on any console error, page exception or failed shader compile,
-so a broken frame can't quietly pass. `--play N` fast-forwards the simulation
-N seconds so captures show a live firefight rather than a menu.
+exits non-zero on any console error, page exception or failed shader compile.
+`--play N` fast-forwards the simulation N seconds so captures show a live
+firefight rather than a menu; `--wave N` jumps the wave director. It also
+refuses any frame the page reports as unhealthy — a lost WebGL context drops
+back to the loading screen, and a harness that only watches the console will
+happily save that and report success.
 
-Two debug pages exist for judging art in isolation: `char.html` (character
-viewer, no HUD) and `debug.html` (2D face/eye/brow/mouth atlases).
-`audio.html` renders every synthesised sound through an `OfflineAudioContext`
-and reports peak, RMS and onset taper.
+`tools/tests/shaders.test.mjs` guards two bugs that are invisible until
+something looks wrong on screen: a backtick inside a `/* glsl */` template
+literal, which terminates the string and leaves the rest of the shader parsed
+as JavaScript; and an inverted-hull outline steering by `transformedNormal`
+while using `THREE.BackSide`, which three negates under `FLIP_SIDED` so the
+hull expands inward and no outline renders at all. Both have happened here.
+
+Three debug pages exist for judging pieces in isolation: `char.html`
+(character viewer, no HUD), `debug.html` (2D face atlases), and `audio.html`,
+which renders every synthesised sound through an `OfflineAudioContext` and
+reports peak, RMS, duration and onset taper.
+
+### Measured
+
+| | |
+|---|---|
+| Simulation | 1.2 ms mean, 2.4 ms p95 per frame at 7 units — 7% of a 60fps budget |
+| Scene | ~153 draw calls, ~600k triangles |
+| Physics | 0.23 ms/step for 41 bodies; no tunnelling at 300 m/s through a 0.1 m wall |
+| Interpenetration | 1000 samples at up to 12 units: zero, world or unit-vs-unit |
+| Audio | 32/32 sounds non-silent, none clipping; 12 s of music with no dropout |
+| Bundle | 273 kB gzipped, entire game |
+
+The rendering framerate is deliberately not quoted. This was developed in a
+sandbox with no GPU, where SwiftShader reports numbers that say nothing about
+real hardware. The simulation figure is pure JavaScript and does transfer.
 
 ## Layout
 
