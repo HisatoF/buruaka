@@ -86,6 +86,7 @@ uniform float uMidSoft;
 uniform float uMidWeight;
 uniform float uFlatten;         // 1.0 = ignore the ramp entirely (face / eyes)
 uniform float uShadowStrength;  // how much the cast shadow map darkens
+uniform float uShadowFloor;     // hard lower bound on the ramp multiplier
 
 // --- rim --------------------------------------------------------------
 uniform vec3  uRimColor;
@@ -207,6 +208,13 @@ void main() {
   vec3 lightMul = mix( uShadowTint, uMidTint, clamp( ramp * 2.0, 0.0, 1.0 ) );
   lightMul = mix( lightMul, vec3( 1.0 ), clamp( ramp * 2.0 - 1.0, 0.0, 1.0 ) );
 
+  // A floor on the multiplier. Outward- and downward-facing cloth — a skirt
+  // panel, a sock, a sleeve underside — sits permanently in the core shadow
+  // band, and on an already-dark navy that lands close enough to the outline
+  // colour that the garment stops reading as a garment. Anime art keeps its
+  // darks well above black; this is where that gets enforced.
+  lightMul = max( lightMul, vec3( uShadowFloor ) );
+
   vec3 diffuse = base * lightMul * lightColor;
 
   // ---- hemispheric fill ---------------------------------------------
@@ -270,6 +278,7 @@ export const TOON_DEFAULTS = {
   midWeight: 0.55,
   flatten: 0,
   shadowStrength: 1,
+  shadowFloor: 0,
   rimColor: 0xbfe8ff,
   rimPower: 3.2,
   rimStrength: 0.24,
@@ -333,6 +342,7 @@ export function createToonMaterial( options = {} ) {
         uMidWeight: { value: o.midWeight },
         uFlatten: { value: o.flatten },
         uShadowStrength: { value: o.shadowStrength },
+        uShadowFloor: { value: o.shadowFloor },
         uRimColor: { value: c( o.rimColor ) },
         uRimPower: { value: o.rimPower },
         uRimStrength: { value: o.rimStrength },
@@ -424,7 +434,16 @@ void main() {
 
   // Expand along the view-space normal, converted to a clip-space offset so
   // the outline holds a near-constant pixel width at any distance.
-  vec3 nView = normalize( transformedNormal );
+  //
+  // NOT transformedNormal. This material is BackSide, and three sets
+  // flipSided from exactly that, which defines FLIP_SIDED, which makes
+  // <defaultnormal_vertex> negate transformedNormal. Using it here expanded
+  // the hull *inward* — so the game rendered with no outlines at all, while
+  // the collapsed hull z-fought its way through thin geometry and produced
+  // stripes on hair and sawtooth speckle along every hem and cuff.
+  // objectNormal is already skinned by <skinnormal_vertex> and is not
+  // touched by the flip, so transform it directly.
+  vec3 nView = normalize( normalMatrix * objectNormal );
   vec4 clipN = projectionMatrix * vec4( mvPosition.xyz + nView, 1.0 );
   vec2 dir = clipN.xy / max( clipN.w, 1e-4 ) - clip.xy / max( clip.w, 1e-4 );
   dir = length( dir ) > 1e-6 ? normalize( dir ) : vec2( 0.0 );
@@ -459,7 +478,7 @@ void main() {
 `;
 
 export function createOutlineMaterial( {
-  color = 0x2b2138, thickness = 0.0060, minPixels = 2.2,
+  color = 0x2b2138, thickness = 0.0068, minPixels = 2.6,
   vertexTint = false, tintMix = 0.42,
 } = {} ) {
   return new THREE.ShaderMaterial( {

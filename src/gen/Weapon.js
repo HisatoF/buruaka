@@ -37,6 +37,19 @@ function magazine( x, y, z, w, h, d, tilt, color ) {
   return paintGeometry( g, color );
 }
 
+/**
+ * Grip anchor positions per weapon, in the weapon's local space.
+ * `main` is the trigger hand, `support` the fore-end. These mirror the
+ * geometry each `WEAPONS.*` builder actually places, rather than being one
+ * guessed pair applied to a pistol-length SMG and a 0.7 m sniper alike.
+ */
+const GRIPS = {
+  rifle:   { main: [ 0, -0.030, -0.052 ], support: [ 0, 0.008, 0.215 ] },
+  smg:     { main: [ 0, -0.028, -0.046 ], support: [ 0, 0.006, 0.150 ] },
+  shotgun: { main: [ 0, -0.030, -0.048 ], support: [ 0, -0.026, 0.230 ] },
+  sniper:  { main: [ 0, -0.030, -0.060 ], support: [ 0, 0.004, 0.190 ] },
+};
+
 function grip( x, y, z, color ) {
   const g = roundedBox( 0.028, 0.088, 0.042, 0.010, 2 );
   g.rotateX( 0.32 );
@@ -177,6 +190,17 @@ export function buildWeapon( kind, opts = {} ) {
   muzzle.position.set( 0, 0.006, build.muzzleZ );
   group.add( muzzle );
 
+  const g = GRIPS[ kind ] ?? GRIPS.rifle;
+  const gripMain = new THREE.Object3D();
+  gripMain.name = 'gripMain';
+  gripMain.position.set( ...g.main );
+  group.add( gripMain );
+
+  const gripSupport = new THREE.Object3D();
+  gripSupport.name = 'gripSupport';
+  gripSupport.position.set( ...g.support );
+  group.add( gripSupport );
+
   const ejectPort = new THREE.Object3D();
   ejectPort.position.set( 0.030, 0.020, 0.02 );
   group.add( ejectPort );
@@ -185,6 +209,9 @@ export function buildWeapon( kind, opts = {} ) {
     group,
     mesh,
     muzzle,
+    gripMain,
+    gripSupport,
+    grips: g,
     ejectPort,
     material,
     outlineMaterial,

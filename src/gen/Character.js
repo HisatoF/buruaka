@@ -187,13 +187,16 @@ function buildBody( design ) {
       return paintGeometry( geo, skin );
     };
 
-    parts.push( placeOnHand( roundedBox( 0.050, 0.062, 0.046, 0.020, 3 ), 0.048, 0, 0.002 ) );
+    // Overlapped back into the forearm: placed flush, the flat wrist cap and
+    // the fist left a visible slot of background between them.
+    parts.push( placeOnHand( roundedBox( 0.046, 0.052, 0.044, 0.018, 3 ), 0.018, 0, 0.001 ) );
+    parts.push( placeOnHand( roundedBox( 0.050, 0.062, 0.046, 0.020, 3 ), 0.052, 0, 0.002 ) );
     // Knuckle ridge across the front of the fist.
-    parts.push( placeOnHand( roundedBox( 0.050, 0.024, 0.022, 0.010, 2 ), 0.070, 0, 0.014 ) );
+    parts.push( placeOnHand( roundedBox( 0.050, 0.024, 0.022, 0.010, 2 ), 0.074, 0, 0.014 ) );
     // Thumb wrapped across, rather than sticking out as a separate stub.
     const thumb = roundedBox( 0.022, 0.044, 0.024, 0.010, 2 );
     thumb.rotateX( 0.5 );
-    parts.push( placeOnHand( thumb, 0.048, 0.024, 0.020 ) );
+    parts.push( placeOnHand( thumb, 0.052, 0.024, 0.020 ) );
   }
 
   // --- legs ------------------------------------------------------------
@@ -272,34 +275,34 @@ function buildOutfit( design ) {
   // two axes reads as an arrowhead, not as a loop of fabric.
   for ( const sx of [ -1, 1 ] ) {
     const wing = profileTube( [
-      { y: 0.000, rx: 0.006, rz: 0.009 },
-      { y: 0.020, rx: 0.020, rz: 0.013 },
-      { y: 0.046, rx: 0.026, rz: 0.015 },
-      { y: 0.062, rx: 0.014, rz: 0.010 },
+      { y: 0.000, rx: 0.008, rz: 0.011 },
+      { y: 0.026, rx: 0.028, rz: 0.017 },
+      { y: 0.058, rx: 0.036, rz: 0.020 },
+      { y: 0.078, rx: 0.018, rz: 0.012 },
     ], { radial: 10, capTop: true, capBottom: true, capRound: 0.4 } );
     wing.rotateZ( sx * Math.PI / 2 );
     wing.rotateY( sx * -0.30 );
-    wing.translate( sx * 0.012, 1.258, 0.079 );
+    wing.translate( sx * 0.014, 1.262, 0.086 );
     parts.push( paintGeometry( wing, o.ribbon ) );
 
     // Trailing tail, cut to a point.
     const tailPiece = profileTube( [
-      { y: 0.000, rx: 0.013, rz: 0.006 },
-      { y: 0.034, rx: 0.014, rz: 0.006 },
-      { y: 0.062, rx: 0.010, rz: 0.005 },
+      { y: 0.000, rx: 0.016, rz: 0.007 },
+      { y: 0.042, rx: 0.017, rz: 0.007 },
+      { y: 0.076, rx: 0.011, rz: 0.005 },
     ], { radial: 8, capTop: true, capBottom: false } );
     tailPiece.rotateX( Math.PI );
     tailPiece.rotateZ( sx * 0.22 );
-    tailPiece.translate( sx * 0.014, 1.252, 0.076 );
+    tailPiece.translate( sx * 0.016, 1.254, 0.082 );
     parts.push( paintGeometry( tailPiece, o.ribbon ) );
   }
 
   const knot = profileTube( [
-    { y: 0.000, rx: 0.012, rz: 0.010 },
-    { y: 0.010, rx: 0.015, rz: 0.013 },
-    { y: 0.022, rx: 0.012, rz: 0.010 },
+    { y: 0.000, rx: 0.015, rz: 0.012 },
+    { y: 0.013, rx: 0.019, rz: 0.016 },
+    { y: 0.028, rx: 0.015, rz: 0.012 },
   ], { radial: 10, capTop: true, capBottom: true, capRound: 0.6 } );
-  knot.translate( 0, 1.250, 0.083 );
+  knot.translate( 0, 1.252, 0.090 );
   parts.push( paintGeometry( knot, o.ribbon ) );
 
   // --- sleeves ---------------------------------------------------------
@@ -311,7 +314,7 @@ function buildOutfit( design ) {
     const shoulder = V( sx * 0.128, 1.288, 0 );
     const cuff = V( sx * 0.224, 1.112, 0 );
     const sleeve = limb( shoulder, cuff, [
-      { t: 0, r: 0.064 }, { t: 0.24, r: 0.062 }, { t: 0.64, r: 0.053 }, { t: 1, r: 0.047 },
+      { t: 0, r: 0.058 }, { t: 0.24, r: 0.058 }, { t: 0.64, r: 0.052 }, { t: 1, r: 0.047 },
     ], { radial: 16, capTop: false, capBottom: true, capRound: 0.42 } );
     sleeves[ sx ].push( paintGeometry( sleeve, o.jacket ?? o.shirt ) );
 
@@ -619,6 +622,7 @@ export class Character {
       color: 0xffffff,
       vertexTint: true,
       shadowStrength: 0,
+      shadowFloor: 0.72,
       specStrength: 0.10,
       specGloss: 22,
       rimStrength: 0.45,
@@ -689,9 +693,10 @@ export class Character {
       rimColor: design.rimColor ?? PALETTE.accentCyan,
       shadowTint: 0xc0b8dc,
       midTint: 0xdfd9ee,
+      shadowFloor: 0.78,
       ambient: 0.44,
-      shadowStep: 0.44,
-      shadowSoft: 0.030,
+      shadowStep: 0.32,
+      shadowSoft: 0.026,
     } );
     this.hairMaterial = hairMat;
     this._addSkinned( 'hair', mergeGeometries( hairGeos ), hairMat, outlineMat, skeleton );
@@ -720,6 +725,8 @@ export class Character {
       this.weapon = buildWeapon( design.weapon, { rimColor: design.rimColor } );
       this.weaponSocket.add( this.weapon.group );
       this.stats = this.weapon.stats;
+      // Hand the animator this weapon's own grip offsets.
+      this.animatorGrips = this.weapon.grips;
     }
 
     // --- secondary motion ---------------------------------------------------
@@ -738,6 +745,10 @@ export class Character {
     } );
 
     this.animator = new Animator( this );
+    if ( this.animatorGrips ) {
+      this.animator.gripMain.set( ...this.animatorGrips.main );
+      this.animator.gripSupport.set( ...this.animatorGrips.support );
+    }
 
     if ( design.scale && design.scale !== 1 ) root.scale.setScalar( design.scale );
 
@@ -776,12 +787,39 @@ export class Character {
    * its width by the chin, so a card at eye-level Z ends up floating three
    * centimetres in front of the face and reads as sitting on the neck.
    */
-  static headSurfaceZ( worldY, radius = 0.118, jawNarrow = 0.60, chin = 0.24 ) {
+  static headSurfaceZ( worldY, worldX = 0, radius = 0.118, jawNarrow = 0.60, chin = 0.24 ) {
     const t = THREE.MathUtils.clamp( ( worldY - HEAD.centerY ) / radius, -0.999, 0.999 );
-    const ring = radius * Math.sqrt( Math.max( 0, 1 - t * t ) );
-    if ( t >= 0 ) return ring;
-    const k = 1 - ( 1 - jawNarrow ) * Math.pow( -t, 1.5 );
-    return ring * k + chin * radius * Math.pow( -t, 2.4 );
+    // Radius of the head's cross-section at this height, after the jaw taper
+    // (shapeHead scales x and z together, so the section stays circular).
+    let r = radius * Math.sqrt( Math.max( 0, 1 - t * t ) );
+    if ( t < 0 ) r *= 1 - ( 1 - jawNarrow ) * Math.pow( -t, 1.5 );
+
+    // The surface is a full centimetre shallower at the outer corner of an
+    // eye card than it is on the centre line, so X has to be part of this.
+    let z = Math.sqrt( Math.max( 0, r * r - worldX * worldX ) );
+    if ( t < 0 ) z += chin * radius * Math.pow( -t, 2.4 );
+    return z;
+  }
+
+  /**
+   * Lays a face card exactly on the head's surface, offset forward by `lift`.
+   *
+   * Every vertex is placed individually rather than the card being parked at
+   * one Z: a flat card on a sphere buries its own corners, and the previous
+   * code compounded that by *subtracting* the lift instead of adding it, which
+   * pushed the whole card inside the skull. The eyes lost their upper lashes
+   * to the forehead and the brows and mouth vanished completely.
+   */
+  static conformCardToHead( geo, centreX, centreY, lift ) {
+    const pos = geo.attributes.position;
+    for ( let i = 0; i < pos.count; i++ ) {
+      const wx = centreX + pos.getX( i );
+      const wy = centreY + pos.getY( i );
+      pos.setZ( i, Character.headSurfaceZ( wy, wx ) + lift - Character.headSurfaceZ( centreY, centreX ) );
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    return geo;
   }
 
   _buildFace( design, headBone ) {
@@ -816,8 +854,9 @@ export class Character {
     const group = new THREE.Group();
     group.name = 'face';
 
-    const mkCard = ( w, h, x, y, z, curve ) => {
-      const geo = faceCard( w, h, curve );
+    const mkCard = ( w, h, x, y, z, curve, worldY = 0, lift = 0.012 ) => {
+      const geo = faceCard( w, h, 0 );
+      if ( worldY ) Character.conformCardToHead( geo, x, worldY, lift );
       const uv = geo.attributes.uv;
       const base = new Float32Array( uv.count * 2 );
       for ( let i = 0; i < uv.count; i++ ) { base[ i * 2 ] = uv.getX( i ); base[ i * 2 + 1 ] = uv.getY( i ); }
@@ -843,14 +882,16 @@ export class Character {
     const BROW_Y = 1.514;
     const MOUTH_Y = 1.416;
 
-    // Each card sits a hair proud of the head's own surface at its height.
-    const zAt = ( y, lift ) => Character.headSurfaceZ( y ) - lift;
-
+    // Cards are conformed to the head surface per-vertex and pushed forward,
+    // so `z` here is just the card origin's depth.
     for ( const sx of [ -1, 1 ] ) {
-      cards.eyes.push( mkCard( 0.078, 0.078, sx * 0.047, localY( EYE_Y ), zAt( EYE_Y, 0.012 ), 0.40 ) );
-      cards.brows.push( mkCard( 0.062, 0.031, sx * 0.050, localY( BROW_Y ), zAt( BROW_Y, 0.010 ), 0.34 ) );
+      cards.eyes.push( mkCard( 0.078, 0.078, sx * 0.047, localY( EYE_Y ),
+        Character.headSurfaceZ( EYE_Y, sx * 0.047 ) + 0.006, 0, EYE_Y, 0.006 ) );
+      cards.brows.push( mkCard( 0.062, 0.031, sx * 0.050, localY( BROW_Y ),
+        Character.headSurfaceZ( BROW_Y, sx * 0.050 ) + 0.006, 0, BROW_Y, 0.006 ) );
     }
-    cards.mouth = mkCard( 0.046, 0.046, 0, localY( MOUTH_Y ), zAt( MOUTH_Y, 0.008 ), 0.30 );
+    cards.mouth = mkCard( 0.046, 0.046, 0, localY( MOUTH_Y ),
+      Character.headSurfaceZ( MOUTH_Y, 0 ) + 0.006, 0, MOUTH_Y, 0.006 );
 
     headBone.add( group );
     this.faceGroup = group;
