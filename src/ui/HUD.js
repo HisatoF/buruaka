@@ -98,35 +98,59 @@ function clock( s ) {
 const PORTRAIT_CACHE = new Map();
 
 /** A tiny stylised student bust: hair silhouette, face, halo. */
-function portraitSVG( seed, color ) {
-  const key = seed + '|' + color;
+function portraitSVG( seed, color, opts = {} ) {
+  const style = opts.style ?? '';
+  const accent = opts.accent ?? '#2b2138';
+  const key = seed + '|' + color + '|' + style + '|' + accent;
   const hit = PORTRAIT_CACHE.get( key );
   if ( hit ) return hit;
 
   let h = 0;
   for ( let i = 0; i < seed.length; i++ ) h = ( h * 31 + seed.charCodeAt( i ) ) & 0xffff;
   const hair = color;
-  const bang = h % 3;
   const bangs = [
     'M6 20 Q6 8 20 8 Q34 8 34 20 L34 25 Q30 15 26 19 Q22 12 14 19 Q10 15 6 25 Z',
     'M6 21 Q6 8 20 8 Q34 8 34 21 L34 26 Q28 16 20 20 Q12 16 6 26 Z',
     'M6 20 Q6 8 20 8 Q34 8 34 20 L34 24 Q24 14 20 22 Q16 14 6 24 Z',
-  ][ bang ];
+  ][ h % 3 ];
+
+  /*
+   * Silhouette, not just hue. Four students rendered as four recolours of one
+   * head are indistinguishable at a 34px chip — and hue alone fails outright
+   * for the two pale-haired ones, which land at nearly the same value. The
+   * hair *shape* is what a player actually recognises, so the chip mirrors
+   * the style the 3D character is generated with.
+   */
+  const silhouettes = {
+    twintail:
+      `<path d="M2 18 Q1 40 4 44 L11 44 Q8 34 9 20 Z" fill="${hair}"/>
+       <path d="M38 18 Q39 40 36 44 L29 44 Q32 34 31 20 Z" fill="${hair}"/>
+       <ellipse cx="7" cy="17" rx="4" ry="3" fill="${hair}"/>
+       <ellipse cx="33" cy="17" rx="4" ry="3" fill="${hair}"/>`,
+    long:
+      `<path d="M3 20 Q1 38 5 44 L35 44 Q39 38 37 20 Q37 12 20 12 Q3 12 3 20 Z" fill="${hair}" opacity=".92"/>`,
+    ponytail:
+      `<path d="M20 9 Q31 9 33 16 Q40 22 37 34 Q34 41 30 40 Q35 30 31 22 Z" fill="${hair}" opacity=".95"/>`,
+    bob:
+      `<path d="M4 22 Q4 10 20 10 Q36 10 36 22 L36 31 Q28 27 20 27 Q12 27 4 31 Z" fill="${hair}"/>`,
+    short: '',
+  };
 
   const s =
 `<svg viewBox="0 0 40 44" xmlns="${SVGNS}" aria-hidden="true">
   <rect width="40" height="44" fill="none"/>
+  ${silhouettes[ style ] ?? ''}
   <ellipse cx="20" cy="5.5" rx="7.5" ry="2.3" fill="none" stroke="#ffffff" stroke-width="1.5" opacity=".95"/>
   <path d="M4 44 L4 24 Q4 10 20 10 Q36 10 36 24 L36 44 Z" fill="${hair}" opacity=".95"/>
   <path d="M11 44 L11 33 Q20 28 29 33 L29 44 Z" fill="#ffffff" opacity=".92"/>
   <path d="M20 30 l4 14 -8 0 z" fill="${hair}" opacity=".65"/>
   <ellipse cx="20" cy="24" rx="8.4" ry="9" fill="#ffe2cf"/>
   <path d="${bangs}" fill="${hair}"/>
-  <ellipse cx="16.4" cy="25" rx="1.5" ry="2.1" fill="#2b2138"/>
-  <ellipse cx="23.6" cy="25" rx="1.5" ry="2.1" fill="#2b2138"/>
-  <ellipse cx="16.1" cy="24.3" rx=".6" ry=".8" fill="#ffffff"/>
-  <ellipse cx="23.3" cy="24.3" rx=".6" ry=".8" fill="#ffffff"/>
-  <path d="M18.7 28.4 q1.3 1.2 2.6 0" stroke="#c8213a" stroke-width=".9" fill="none" stroke-linecap="round"/>
+  <ellipse cx="16.4" cy="25" rx="1.7" ry="2.3" fill="${accent}"/>
+  <ellipse cx="23.6" cy="25" rx="1.7" ry="2.3" fill="${accent}"/>
+  <ellipse cx="16.0" cy="24.2" rx=".7" ry=".9" fill="#ffffff"/>
+  <ellipse cx="23.2" cy="24.2" rx=".7" ry=".9" fill="#ffffff"/>
+  <path d="M18.7 28.6 q1.3 1.2 2.6 0" stroke="#c8213a" stroke-width=".9" fill="none" stroke-linecap="round"/>
 </svg>`;
   PORTRAIT_CACHE.set( key, s );
   return s;
@@ -263,6 +287,15 @@ export class WorldMarker {
 const DMG_POOL = 48;
 const COST_PIPS = 10;
 
+/** Gameplay damage-kind names mapped onto the stylesheet's short keys. */
+const DAMAGE_KIND_ALIAS = {
+  critical: 'crit',
+  weakness: 'weak',
+  weakpoint: 'weak',
+  blocked: 'block',
+  healing: 'heal',
+};
+
 export class HUD {
   /**
    * @param {HTMLElement} root  container (e.g. #ui-root)
@@ -390,7 +423,8 @@ export class HUD {
   _makeUnit( u ) {
     const root = el( 'div', 'unit is-enter' );
     const port = el( 'div', 'unit__port', root );
-    port.innerHTML = portraitSVG( u.id || u.name || 'x', u.color || '#35a3ea' );
+    port.innerHTML = portraitSVG( u.id || u.name || 'x', u.color || '#35a3ea',
+      { style: u.hairStyle, accent: u.accent } );
     const role = el( 'div', 'unit__role', port );
     const retire = el( 'div', 'unit__retire', port, 'RETIRE' );
 
@@ -486,7 +520,7 @@ export class HUD {
     const setBtn = el( 'button', 'btn btn--ghost', row );
     setBtn.type = 'button';
     el( 'span', null, setBtn, 'SETTINGS' );
-    el( 'div', 'title__hint', title, 'WASD MOVE — MOUSE AIM — 1-4 EX SKILL' );
+    el( 'div', 'title__hint', title, 'WASD MOVE — DRAG TO ORBIT — 1-4 EX SKILL' );
 
     const st = this._buildSettings( t );
 
@@ -718,6 +752,7 @@ export class HUD {
     this._updSquad( state );
     this._updDeck( state );
     this._updFx( state );
+    this._updCombo( state );
     this._drain( state );
     this._updResults( state );
 
@@ -1107,6 +1142,13 @@ export class HUD {
    * @param {{x,y,z}} position  world point (or screen px when opts.screen)
    */
   damage( value, kind = 'normal', position = null, opts = {} ) {
+    // Gameplay speaks in full words, the stylesheet in short keys. Aliasing
+    // here rather than renaming one side means a new damage type can't
+    // silently fall back to the plain white treatment because two files
+    // disagreed about a string — which is exactly how every critical hit in
+    // this build was rendering as an ordinary number.
+    kind = DAMAGE_KIND_ALIAS[ kind ] ?? kind;
+
     const d = this._dmg[ this._dmgHead ];
     this._dmgHead = ( this._dmgHead + 1 ) % this._dmg.length;
 
@@ -1278,8 +1320,12 @@ export class HUD {
       cssVar( n, '--i', String( i ) );
       cssVar( n, '--u-col', u.color || '#35a3ea' );
       const chip = n.children[ 0 ].children[ 0 ];
-      const ck = ( u.id || u.name || 'x' ) + '|' + ( u.color || '#35a3ea' );
-      if ( chip.__ck !== ck ) { chip.__ck = ck; chip.innerHTML = portraitSVG( u.id || u.name || 'x', u.color || '#35a3ea' ); }
+      const ck = ( u.id || u.name || 'x' ) + '|' + ( u.color || '#35a3ea' ) + '|' + ( u.hairStyle || '' ) + '|' + ( u.accent || '' );
+      if ( chip.__ck !== ck ) {
+        chip.__ck = ck;
+        chip.innerHTML = portraitSVG( u.id || u.name || 'x', u.color || '#35a3ea',
+          { style: u.hairStyle, accent: u.accent } );
+      }
       txt( n.children[ 0 ].children[ 1 ], u.name || '???' );
       for ( let c = 0; c < 3; c++ ) {
         const cell = n.children[ c + 1 ];
@@ -1292,6 +1338,42 @@ export class HUD {
   /* ---------------- lifecycle ---------------- */
 
   /** Show/hide the whole HUD without tearing it down. */
+  /** Shows or hides the pause veil. */
+  setPaused( on ) {
+    if ( !this._pause ) {
+      const veil = el( 'div', 'hud-pause', this.el );
+      veil.innerHTML =
+        '<div class="hud-pause__card">' +
+        '<div class="hud-pause__title">PAUSED</div>' +
+        '<div class="hud-pause__hint">ESC or P to resume</div>' +
+        '</div>';
+      this._pause = veil;
+    }
+    tog( this._pause, 'is-on', !!on );
+  }
+
+  /** Live combo / score cluster — the loudest feedback element in the genre. */
+  _updCombo( s ) {
+    if ( !this._combo ) {
+      const c = el( 'div', 'combo', this.el );
+      c.innerHTML =
+        '<div class="combo__n"><b>0</b><span>COMBO</span></div>' +
+        '<div class="combo__score">0</div>';
+      this._combo = { el: c, n: c.querySelector( 'b' ), score: c.querySelector( '.combo__score' ) };
+    }
+    const combo = s.combo | 0;
+    const c = this._combo;
+    if ( c._lastN !== combo ) {
+      c._lastN = combo;
+      txt( c.n, String( combo ) );
+      // Re-trigger the punch only on an increase, so a decay to zero is quiet.
+      if ( combo > 1 ) replay( c.el );
+    }
+    tog( c.el, 'is-on', combo > 1 );
+    const score = Math.round( s.score || 0 );
+    if ( c._lastS !== score ) { c._lastS = score; txt( c.score, fmt( score ) ); }
+  }
+
   setVisible( on ) { tog( this.el, 'is-hidden', !on ); }
 
   dispose() {

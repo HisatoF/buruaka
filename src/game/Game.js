@@ -166,8 +166,8 @@ export class Game {
       _v.copy( direction ).setY( 0 ).normalize();
       const dealt = victim.takeDamage( damage, _v, crit ? 'critical' : 'normal' );
 
-      this.vfx.emit( 'impactFlesh', { position: hit.point, direction: hit.normal, scale: crit ? 1.5 : 1 } );
-      this.vfx.emit( 'hitSpark', { position: hit.point, direction: hit.normal, scale: crit ? 1.4 : 1 } );
+      this.vfx.emit( 'impactFlesh', { position: hit.point, direction: hit.normal, scale: crit ? 0.75 : 0.5, count: 0.7 } );
+      this.vfx.emit( 'hitSpark', { position: hit.point, direction: hit.normal, scale: crit ? 0.85 : 0.6 } );
 
       this._pendingDamage.push( {
         value: Math.round( dealt ),
@@ -220,7 +220,7 @@ export class Game {
   }
 
   onUnitDown( unit, fromDirection ) {
-    this.vfx.emit( 'impactFlesh', { position: unit.chestPoint( _v ), direction: fromDirection ?? _UP, scale: 2.2, count: 1.8 } );
+    this.vfx.emit( 'impactFlesh', { position: unit.chestPoint( _v ), direction: fromDirection ?? _UP, scale: 1.1, count: 1.2 } );
     this.cameraRig.shake( unit.team === TEAM.SQUAD ? 0.5 : 0.18 );
 
     if ( unit.team === TEAM.HOSTILE ) {
@@ -414,6 +414,8 @@ export class Game {
       skills: [],
       markers: [],
       feedback: { lowHp: false },
+      combo: 0,
+      score: 0,
       events: [],
       results: null,
     };
@@ -435,6 +437,8 @@ export class Game {
         name: u.name,
         role: ROLE_BY_WEAPON[ u.stats.kind ] ?? 'ATK',
         color: u.color,
+        accent: u.accent,
+        hairStyle: u.character.design.hair?.style,
         hp: Math.round( u.hp ),
         maxHp: Math.round( u.maxHp ),
         tickEvery: 500,
@@ -487,6 +491,8 @@ export class Game {
     const alive = this.squad.filter( ( u ) => !u.dead );
     s.feedback.lowHp = alive.length > 0 && alive.some( ( u ) => u.hp / u.maxHp < 0.3 );
 
+    s.combo = this.combo;
+    s.score = this.score;
     s.events = this._events;
     this._events = [];
 

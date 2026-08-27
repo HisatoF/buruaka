@@ -1582,3 +1582,164 @@
   .hud { --skill-w: clamp(46px, 7.5vh, 62px); }
   .cost__pips { height: 8px; }
 }
+
+
+/* ----------------------------------------------------------------------
+   Fixes from the interface review
+   ---------------------------------------------------------------------- */
+
+/* The skill card is skewed -12deg with overflow hidden, so a full-bleed label
+   loses its outermost glyph to the shear. Pad by tan(12deg) x line-height on
+   each side and counter-skew the text itself. */
+.skill__in > .skill__label,
+.skill .skill__label,
+.skill__name,
+.skill__sub {
+  padding-inline: 0.42em;
+  overflow: visible;
+}
+
+/* The FX layer was z-index 3, i.e. underneath the world markers (4), roster
+   (6), deck (7) and damage numbers (8) it is supposed to frame. */
+.fx { z-index: 9 !important; }
+
+/* A full-screen white-out at opacity 1 is a photosensitivity hazard with no
+   way to turn it down. Cap the peak and keep the tint at the edges. */
+.fx__flash { opacity: 0.45 !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fx__flash { opacity: 0.18 !important; }
+  .fx__low   { opacity: 0.35 !important; }
+}
+
+/* Grayscaling the whole dead card desaturated the red RETIRE overlay into
+   grey — the clearest death signal was being erased by the death style. */
+.unit.is-dead { filter: none !important; opacity: 0.9; }
+.unit.is-dead .unit__port svg,
+.unit.is-dead .unit__body { filter: grayscale(1) brightness(0.92); }
+.unit.is-dead .unit__retire { filter: none; }
+.unit.is-dead::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(200, 33, 58, .22) 0 8px,
+    rgba(38, 52, 74, .16) 8px 16px
+  );
+}
+
+/* Cooldown numerals were white on a card that is often white, and the
+   disabled wash dimmed them further. */
+.skill__cdnum {
+  color: #ffffff !important;
+  text-shadow: 0 1px 0 rgba(15, 30, 55, .95), 0 0 6px rgba(15, 30, 55, .9);
+}
+.skill__cdnum::before {
+  content: "";
+  position: absolute;
+  inset: -0.24em -0.42em;
+  border-radius: 999px;
+  background: rgba(20, 38, 68, .78);
+  z-index: -1;
+}
+
+/* "Can't afford" and "on cooldown" looked identical. Keep the art saturated
+   when it is only cost that is missing, and dim the pips instead. */
+.skill.is-poor { filter: none; }
+.skill.is-poor .skill__cost i { opacity: .35; }
+.skill.is-poor .skill__art { filter: saturate(.75) brightness(.94); }
+
+/* Armour pips were white-on-white. */
+.unit__pips i {
+  box-shadow: inset 0 0 0 1px rgba(33, 48, 74, .45);
+  background: rgba(33, 48, 74, .12);
+}
+.unit__pips i.on {
+  background: linear-gradient(180deg, #7fd6ff, #2d7fc4);
+  box-shadow: inset 0 0 0 1px rgba(20, 60, 105, .8);
+}
+
+/* An empty status strip reserved 14px of dead white in every card forever. */
+.unit__status:empty { min-height: 0; display: none; }
+
+/* --- pause veil -------------------------------------------------------- */
+.hud-pause {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 24, 44, .58);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .18s ease, visibility .18s;
+  pointer-events: none;
+}
+.hud-pause.is-on { opacity: 1; visibility: visible; pointer-events: auto; }
+.hud-pause__card {
+  background: var(--paper, #fff);
+  border-radius: 8px;
+  padding: 22px 54px;
+  transform: skewX(-12deg);
+  box-shadow: 0 3px 0 rgba(20, 44, 80, .35), 0 14px 34px rgba(18, 44, 82, .28);
+  border: 1.5px solid rgba(35, 70, 120, .16);
+  text-align: center;
+}
+.hud-pause__title {
+  transform: skewX(12deg);
+  font-family: var(--font-num, system-ui);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  color: var(--ink, #21304a);
+}
+.hud-pause__hint {
+  transform: skewX(12deg);
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: .2em;
+  color: var(--ink-soft, #5b6b86);
+}
+
+/* --- combo / score cluster --------------------------------------------- */
+.combo {
+  position: absolute;
+  top: 74px;
+  right: 18px;
+  z-index: 7;
+  text-align: right;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.combo.is-on { opacity: 1; transform: none; animation: combo-punch .22s cubic-bezier(.2,1.6,.4,1); }
+@keyframes combo-punch {
+  0%   { transform: scale(1.22) translateY(0); }
+  100% { transform: scale(1) translateY(0); }
+}
+.combo__n {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  font-family: var(--font-num, system-ui);
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(15, 32, 60, .8), 0 0 12px rgba(127, 214, 255, .7);
+}
+.combo__n b { font-size: 38px; font-weight: 700; line-height: 1; color: var(--cost, #ffd54a); }
+.combo__n span { font-size: 11px; letter-spacing: .26em; opacity: .9; }
+.combo__score {
+  font-family: var(--font-num, system-ui);
+  font-size: 15px;
+  letter-spacing: .12em;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(15, 32, 60, .85);
+  margin-top: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .combo.is-on { animation: none; }
+}

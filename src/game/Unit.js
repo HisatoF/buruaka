@@ -59,6 +59,8 @@ export class Unit {
     this.hp = this.maxHp;
     this.armor = cfg.armor ?? ( this.team === TEAM.SQUAD ? 3 : 0 );
     this.armorMax = this.armor;
+    this._armorFloat = this.armor;
+    this._armorRegen = 0;
     this.dead = false;
     this.downedTimer = 0;
 
@@ -111,9 +113,15 @@ export class Unit {
     if ( this.dead ) return 0;
 
     // Flat armour reduction with a floor, so a high-armour target is worth
-    // switching weapons for but never immune.
+    // switching weapons for but never immune. Armour is also a *depleting*
+    // resource — the roster shows it as pips, and pips that never move are
+    // decoration rather than information.
     const reduced = Math.max( amount * 0.15, amount - this.armor * 2.5 );
     this.hp = Math.max( 0, this.hp - reduced );
+
+    this._armorFloat = Math.max( 0, ( this._armorFloat ?? this.armor ) - amount / ( this.maxHp * 0.16 ) );
+    this.armor = Math.ceil( this._armorFloat );
+    this._armorRegen = 6;
 
     this.animator.hit( fromDirection, Math.min( 1, reduced / ( this.maxHp * 0.08 ) ) );
     this.character.setExpression( { eye: 'angry', brow: 'angry', mouth: 'grimace' } );
@@ -275,6 +283,15 @@ export class Unit {
       this.character.update( dt, elapsed );
       this.character.root.position.copy( this.body.position );
       return;
+    }
+
+    // Armour recovers after a lull, so falling back actually accomplishes
+    // something.
+    if ( this._armorRegen > 0 ) {
+      this._armorRegen -= dt;
+    } else if ( ( this._armorFloat ?? this.armorMax ) < this.armorMax ) {
+      this._armorFloat = Math.min( this.armorMax, ( this._armorFloat ?? 0 ) + dt * 0.45 );
+      this.armor = Math.ceil( this._armorFloat );
     }
 
     this._think -= dt;

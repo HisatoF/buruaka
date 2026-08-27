@@ -66,6 +66,12 @@ async function main() {
 
   let paused = false;
 
+  function setPaused( on ) {
+    paused = on;
+    hud.setPaused?.( on );
+    if ( on ) audio.duck( 'music', 0.5, 200 );
+  }
+
   function applySettings( s ) {
     if ( s.quality !== undefined ) {
       engine.postfx.setQuality( s.quality );
@@ -106,10 +112,11 @@ async function main() {
       }
       if ( input.wheel ) game.cameraRig.zoom( input.wheel );
 
-      for ( let i = 0; i < 4; i++ ) {
-        if ( input.wasPressed( `Digit${i + 1}` ) ) game.useSkill( i );
-      }
-      if ( input.wasPressed( 'KeyP' ) || input.wasPressed( 'Escape' ) ) paused = !paused;
+      // Skill keys are bound by the HUD, which also drives the card's punch
+      // animation. Polling them here as well fired every skill twice: the
+      // second call failed the cost guard and played the error sting, so
+      // every keyboard cast came with a beep.
+      if ( input.wasPressed( 'KeyP' ) || input.wasPressed( 'Escape' ) ) setPaused( !paused );
 
       // Move the squad's rally point, in camera-relative space.
       const axis = input.readMoveAxis();

@@ -70,7 +70,7 @@ export const SKILLS = {
 
   rei: {
     name: 'BREACH SHOT',
-    icon: 'pierce',
+    icon: 'shot',
     cost: 4,
     cooldown: 16,
     flash: 'rgba(255,93,108,.85)',
