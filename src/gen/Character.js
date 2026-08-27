@@ -365,9 +365,19 @@ function buildOutfit( design ) {
       { y: 0.922, rx: 0.152, rz: 0.112 }, { y: 0.956, rx: 0.150, rz: 0.110 },
     ], { radial: 22, capTop: false, capBottom: false } ), o.belt ?? o.jacket ?? o.skirt ) );
   } else if ( o.trousers ) {
+    // A seat piece bridging the two legs. Without it the bare torso shows
+    // through the gap between them from the front.
+    parts.push( paintGeometry( profileTube( [
+      { y: 0.780, rx: 0.132, rz: 0.098 },
+      { y: 0.860, rx: 0.138, rz: 0.102 },
+      { y: 0.935, rx: 0.130, rz: 0.096 },
+    ], { radial: 18, capTop: false, capBottom: true, capRound: 0.5 } ), o.trousers ) );
+
     for ( const sx of [ -1, 1 ] ) {
-      parts.push( paintGeometry( limb( V( sx * 0.076, 0.900, 0 ), V( sx * 0.080, 0.300, 0 ), [
-        { t: 0, r: 0.098 }, { t: 0.35, r: 0.086 }, { t: 0.85, r: 0.062 }, { t: 1, r: 0.058 },
+      // The hem must clear the boot top beneath it, or the leg's plug ring
+      // saws through the trouser cuff.
+      parts.push( paintGeometry( limb( V( sx * 0.076, 0.900, 0 ), V( sx * 0.080, 0.286, 0 ), [
+        { t: 0, r: 0.102 }, { t: 0.35, r: 0.092 }, { t: 0.85, r: 0.082 }, { t: 1, r: 0.080 },
       ], { radial: 14, capTop: false, capBottom: false } ), o.trousers ) );
     }
     parts.push( paintGeometry( profileTube( [
@@ -409,6 +419,48 @@ function buildOutfit( design ) {
     sleeveL: mergeGeometries( sleeves[ '-1' ].map( ensureOutlineMask ) ),
     sleeveR: mergeGeometries( sleeves[ '1' ].map( ensureOutlineMask ) ),
   };
+}
+
+/**
+ * A visor mask for faceless hostiles.
+ *
+ * A faceless character still gets a head — bare skin with blush and a small
+ * nose — which on an enemy reads as a mannequin rather than as a threat. A
+ * visor gives the silhouette an eyeline to read and lets the faction colour
+ * carry the menace.
+ */
+function visorMask( design ) {
+  const parts = [];
+  const shell = design.outfit.jacket ?? 0x3b414f;
+  const glow = design.eyes?.color ?? 0xff5d6c;
+
+  // Wrapped band across the eyeline, curving with the skull.
+  const band = profileTube( [
+    { y: 0.000, rx: 0.108, rz: 0.104 },
+    { y: 0.052, rx: 0.112, rz: 0.108 },
+    { y: 0.078, rx: 0.104, rz: 0.100 },
+  ], { radial: 20, capTop: false, capBottom: false } );
+  band.translate( 0, 1.442, 0.006 );
+  parts.push( paintGeometry( band, shell ) );
+
+  // Lit slit. Pushed proud of the band so it reads at gameplay distance.
+  const slit = profileTube( [
+    { y: 0.000, rx: 0.106, rz: 0.102 },
+    { y: 0.020, rx: 0.107, rz: 0.103 },
+  ], { radial: 20, capTop: false, capBottom: false } );
+  slit.translate( 0, 1.470, 0.006 );
+  parts.push( paintGeometry( slit, glow ) );
+
+  // Jaw guard.
+  const jaw = profileTube( [
+    { y: 0.000, rx: 0.070, rz: 0.070 },
+    { y: 0.040, rx: 0.088, rz: 0.086 },
+    { y: 0.062, rx: 0.096, rz: 0.094 },
+  ], { radial: 18, capTop: false, capBottom: true, capRound: 0.5 } );
+  jaw.translate( 0, 1.352, 0.004 );
+  parts.push( paintGeometry( jaw, shell ) );
+
+  return mergeGeometries( parts.map( ( g ) => allowOutline( g ) ) );
 }
 
 /* ---------------------------------------------------------------------- */
@@ -800,6 +852,25 @@ export class Character {
     // --- face -------------------------------------------------------------
     if ( !design.faceless ) {
       this._buildFace( design, byName.head );
+    } else {
+      // Faceless units get a visor instead of a blank face. It is emissive on
+      // the slit so the eyeline reads as a threat at distance.
+      const maskGeo = computeSmoothNormals( visorMask( design ) );
+      skinRigid( maskGeo, order, 'head' );
+      const maskMat = createToonMaterial( {
+        color: 0xffffff,
+        vertexTint: true,
+        shadowStrength: 0,
+        shadowFloor: 0.66,
+        specStrength: 0.30,
+        specGloss: 60,
+        rimStrength: 0.4,
+        rimColor: design.rimColor ?? PALETTE.accentCyan,
+        emissive: design.eyes?.color ?? 0xff5d6c,
+        emissiveIntensity: 0.22,
+      } );
+      this.maskMaterial = maskMat;
+      this._addSkinned( 'visor', maskGeo, maskMat, outlineMat, skeleton );
     }
 
     // --- halo -------------------------------------------------------------
@@ -1064,6 +1135,7 @@ export class Character {
     this.headMaterial.dispose();
     this.hairMaterial.dispose();
     this.faceMaterial?.dispose();
+    this.maskMaterial?.dispose();
     this.faceAtlas?.texture?.dispose();
     this.outlineMaterial.dispose();
     this.weapon?.dispose();
