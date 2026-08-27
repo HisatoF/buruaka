@@ -19,6 +19,24 @@ function progress( pct, label ) {
 /** Yields to the browser so the boot screen can actually repaint between steps. */
 const nextFrame = () => new Promise( ( r ) => requestAnimationFrame( () => setTimeout( r, 0 ) ) );
 
+/**
+ * Fades the boot screen out and then takes it out of the layout entirely.
+ *
+ * Relying on the opacity transition alone leaves a full-screen element
+ * sitting over the game: if anything blocks the main thread while it is
+ * mid-transition, the fade stalls part-way and the title stays visible on top
+ * of live gameplay.
+ */
+function hideBoot( delay = 0 ) {
+  const el = document.getElementById( 'boot' );
+  if ( !el || el.dataset.gone ) return;
+  el.dataset.gone = '1';
+  setTimeout( () => {
+    el.classList.add( 'hidden' );
+    setTimeout( () => { el.style.display = 'none'; }, 700 );
+  }, delay );
+}
+
 async function main() {
   const canvas = document.getElementById( 'viewport' );
   const uiRoot = document.getElementById( 'ui-root' );
@@ -256,6 +274,10 @@ async function main() {
   // Lets the capture harness drop straight into a live firefight instead of
   // photographing the title screen.
   window.__startMission = ( fastForwardSeconds = 0, opts = {} ) => {
+    // A long fast-forward blocks the main thread, which can strand the boot
+    // fade part-way; take it out of the layout before starting.
+    const b = document.getElementById( 'boot' );
+    if ( b ) { b.classList.add( 'hidden' ); b.style.display = 'none'; }
     if ( game.phase === 'title' ) startMission();
     if ( opts.wave ) {
       // Jump the director so a capture can reach a late wave (or the boss)
@@ -319,7 +341,7 @@ async function main() {
   hud.update( game.hudState(), engine.camera, engine.renderer );
 
   progress( 1, 'READY' );
-  setTimeout( () => boot?.classList.add( 'hidden' ), 240 );
+  hideBoot( 240 );
   window.__GAME_READY__ = true;
 }
 
