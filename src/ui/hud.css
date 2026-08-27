@@ -1755,3 +1755,25 @@
   .hud .fx__low.on { opacity: .3; }
 }
 .fx__hit { opacity: .55; }
+
+/* The directional damage vignette is `.fx__vig`, not `.fx__hit` — an earlier
+   pass capped the wrong selector. At 82% alpha across 60% of the viewport,
+   and now drawn above the whole HUD, a steady stream of hits left the entire
+   frame washed pink. Tighter falloff, lower peak, and the centre kept clear
+   so it reads as a rim flash from the direction of fire. */
+.fx__vig {
+  inset: -6% !important;
+  background: radial-gradient(38% 38% at var(--hx, 50%) var(--hy, 50%),
+    rgba(255, 66, 90, .52) 0%,
+    rgba(255, 66, 90, .22) 42%,
+    rgba(255, 66, 90, 0) 78%) !important;
+}
+@keyframes vig-hit { 0% { opacity: .85 } 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  @keyframes vig-hit { 0% { opacity: .4 } 100% { opacity: 0 } }
+}
+
+/* Low-HP is a persistent state, not an event, so it has to sit far lower than
+   an impact flash — it is on screen for minutes at a time. */
+@keyframes low-pulse { 0%, 100% { opacity: .06 } 50% { opacity: .16 } }
+.fx__low { box-shadow: inset 0 0 clamp(24px, 2.8vw, 60px) rgba(255, 72, 96, .42) !important; }

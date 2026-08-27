@@ -122,7 +122,10 @@ try {
 // before capturing, so shots show a live firefight rather than a menu.
 if ( ready && args.play ) {
   try {
-    await page.evaluate( ( n ) => window.__startMission?.( n ), Number( args.play ) );
+    await page.evaluate(
+      ( o ) => window.__startMission?.( o.n, { wave: o.wave } ),
+      { n: Number( args.play ), wave: args.wave ? Number( args.wave ) : 0 }
+    );
     await page.waitForTimeout( 500 );
   } catch ( e ) {
     errors.push( `PLAY: ${e.message}` );

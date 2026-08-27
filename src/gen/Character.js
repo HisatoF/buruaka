@@ -79,6 +79,26 @@ export const STUDENT_PRESETS = {
 
 /** Hostile "helmet" archetype — same rig, cheaper build, no face cards. */
 export const ENEMY_PRESETS = {
+  /** The mission's climax: oversized, armoured, and slow enough to fight. */
+  hieromonk: {
+    name: 'HIEROMONK', hostile: true, boss: true,
+    skin: 0xc9b4a6,
+    hair: { color: 0x24242e, accent: 0x4a4a58, style: 'short' },
+    eyes: { color: 0xffb03a, shape: 'sharp', lash: 0x1a141a },
+    brow: 0x22222a,
+    outfit: {
+      shirt: 0x5c4f6b, jacket: 0x483c58, skirt: null, trousers: 0x3b3149,
+      ribbon: 0xffb03a, socks: 0x2b2436, shoes: 0x211b2a, trim: 0xffb03a,
+      sockBand: 0x352c42, sole: 0x4a4157, belt: 0x2b2436, cuff: 0x5c4f6b,
+    },
+    halo: { type: 'cross', color: 0xffb03a },
+    weapon: 'shotgun',
+    scale: 1.62,
+    faceless: true,
+    rimColor: 0xffc46a,
+    outlineColor: 0x1b1622,
+  },
+
   grunt: {
     name: 'GRUNT', hostile: true,
     skin: 0xd8c8bc,

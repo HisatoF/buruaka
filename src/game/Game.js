@@ -57,6 +57,7 @@ export class Game {
     this.time = 0;
     this.timeLimit = 300;
 
+    this.boss = null;
     this.rally = new THREE.Vector3( 0, 0, -2 );
     this.squadCentre = new THREE.Vector3( 0, 0, 14 );
     this.director = new WaveDirector( this );
@@ -342,6 +343,7 @@ export class Game {
       // Hostiles clear out; downed squad members stay on the field so the
       // player can see who is left standing.
       if ( u.team !== TEAM.HOSTILE ) continue;
+      if ( u === this.boss ) this.boss = null;
 
       u.dispose();
       this.units.splice( i, 1 );
@@ -446,7 +448,7 @@ export class Game {
         armorMax: u.armorMax,
         dead: u.dead,
         active: !u.dead,
-        status: u.statusEffects ?? [],
+        status: u.statuses,
       } );
     }
 
@@ -468,9 +470,32 @@ export class Game {
       } );
     } );
 
+    // --- boss bar ---------------------------------------------------------
+    if ( this.boss && !this.boss.dead ) {
+      s.boss.visible = true;
+      s.boss.name = this.boss.name;
+      s.boss.tag = 'BOSS';
+      s.boss.hp = Math.round( this.boss.hp );
+      s.boss.maxHp = Math.round( this.boss.maxHp );
+      s.boss.shield = 0;
+      s.boss.ticks = 24;
+      s.boss.phases = this.boss.phases ?? [];
+    } else {
+      s.boss.visible = false;
+    }
+
+    // Cap the plate count and prefer what is close and dangerous. A late wave
+    // puts a dozen identical GRUNT plates on screen, which collapse into an
+    // unreadable stripe of overlapping text.
     s.markers.length = 0;
-    for ( const h of this.hostiles ) {
-      if ( h.dead ) continue;
+    const live = this.hostiles.filter( ( h ) => !h.dead );
+    if ( live.length > MAX_MARKERS ) {
+      live.sort( ( a, b ) =>
+        a.position.distanceToSquared( this.camera.position ) -
+        b.position.distanceToSquared( this.camera.position ) );
+      live.length = MAX_MARKERS;
+    }
+    for ( const h of live ) {
       s.markers.push( {
         id: h.id,
         type: 'enemy',
@@ -480,7 +505,8 @@ export class Game {
         hp: Math.round( h.hp ),
         maxHp: Math.round( h.maxHp ),
         shield: 0,
-        tags: h.armor > 0 ? [ 'HEAVY' ] : [ 'LIGHT' ],
+        tags: h.statuses.length ? h.statuses.map( ( st ) => st.name.toUpperCase() )
+          : ( h.armor > 0 ? [ 'HEAVY' ] : [ 'LIGHT' ] ),
         // Nameplates were drawing at full strength through containers and
         // planters that completely hide their owner, which reads as the UI
         // lying about what the player can see.
@@ -526,7 +552,7 @@ export class Game {
       combo: this.maxCombo,
       stats: [
         { label: 'SCORE', value: Math.round( this.score ).toLocaleString() },
-        { label: 'CLEAR TIME', value: formatTime( this.time ) },
+        { label: 'CLEAR TIME', value: formatClock( this.time ) },
         { label: 'WAVES CLEARED', value: `${this.director.clearedWaves} / ${this.director.totalWaves}` },
         { label: 'MAX COMBO', value: String( this.maxCombo ) },
         { label: 'DAMAGE TAKEN', value: Math.round( this.damageTaken ).toLocaleString() },
@@ -547,6 +573,45 @@ export class Game {
     const out = this._pendingDamage;
     this._pendingDamage = [];
     return out;
+  }
+
+  /**
+   * Restarts the mission without a page reload.
+   *
+   * Reloading dropped the player back through the shader-compile boot screen
+   * for a retry, which is the worst possible moment to make them wait. Tearing
+   * down the units and re-seeding the director keeps the level, materials and
+   * compiled programs alive, so a retry is instant.
+   */
+  restart() {
+    for ( const u of this.units ) u.dispose();
+    this.units.length = 0;
+    this.squad.length = 0;
+    this.hostiles.length = 0;
+
+    for ( const cp of this.level.coverPoints ) cp.occupied = null;
+    this.ballistics.clear();
+    this.vfx.clear();
+
+    this.cost = 4;
+    this.combo = 0;
+    this.maxCombo = 0;
+    this.score = 0;
+    this.damageTaken = 0;
+    this.time = 0;
+    this.failed = false;
+    this._results = null;
+    this._pendingDamage.length = 0;
+    this._events.length = 0;
+
+    this.boss = null;
+    this.rally.set( 0, 0, -2 );
+    this.squadCentre.set( 0, 0, 14 );
+    this.director = new WaveDirector( this );
+
+    this._spawnSquad();
+    this.cameraRig.enabled = true;
+    this.start();
   }
 
   setQuality( level ) {
@@ -571,6 +636,9 @@ export class Game {
 
 const _UP = new THREE.Vector3( 0, 1, 0 );
 
+/** Most world-space nameplates drawn at once. */
+const MAX_MARKERS = 7;
+
 /** Weapon archetype -> the role label shown on the roster card. */
 // The roster chip clips to three characters, so these are authored to read
 // correctly truncated rather than being cut into something unfortunate.
@@ -581,10 +649,15 @@ const ROLE_BY_WEAPON = {
   sniper: 'SNP',
 };
 
-function formatTime( seconds ) {
+/**
+ * Matches the in-game clock's `MM:SS` exactly. The results screen previously
+ * used a second formatter, so one value appeared in two shapes in a single
+ * session ("0:20" on the results card, "00:25" on the HUD).
+ */
+function formatClock( seconds ) {
   const m = Math.floor( seconds / 60 );
   const s = Math.floor( seconds % 60 );
-  return `${m}:${String( s ).padStart( 2, '0' )}`;
+  return `${String( m ).padStart( 2, '0' )}:${String( s ).padStart( 2, '0' )}`;
 }
 
 export { ARENA, TEAM };

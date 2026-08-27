@@ -94,6 +94,9 @@ export class Unit {
 
     // Staggered wedge rather than a rank abreast.
     this.formationOffset = cfg.formationOffset ?? new THREE.Vector3();
+
+    /** @type {Array<{id:string,kind:string,icon:string,name:string,duration:number,maxDuration:number,stacks:number,onEnd?:Function}>} */
+    this.statuses = [];
   }
 
   get position() { return this.body.position; }
@@ -129,6 +132,51 @@ export class Unit {
 
     if ( this.hp <= 0 ) this.kill( fromDirection );
     return reduced;
+  }
+
+  /**
+   * Applies a timed status effect.
+   *
+   * Effects own their own expiry rather than being scheduled with setTimeout:
+   * a timer fires whether or not the unit is still alive, whether or not the
+   * mission is still running, and cannot be paused. Ticking them down in the
+   * unit's own update keeps them in step with the simulation and lets the HUD
+   * read the remaining duration, which is what the status strip displays.
+   *
+   * @param {object} spec  { id, kind: 'buff'|'debuff'|'heal'|'shield', icon, name, duration, stacks?, onApply?, onEnd? }
+   */
+  addStatus( spec ) {
+    const existing = this.statuses.find( ( s ) => s.id === spec.id );
+    if ( existing ) {
+      existing.duration = Math.max( existing.duration, spec.duration );
+      existing.maxDuration = Math.max( existing.maxDuration, spec.duration );
+      existing.stacks = Math.min( 9, existing.stacks + ( spec.stacks ?? 1 ) );
+      return existing;
+    }
+    const st = {
+      id: spec.id,
+      kind: spec.kind ?? 'buff',
+      icon: spec.icon ?? '+',
+      name: spec.name ?? spec.id,
+      duration: spec.duration,
+      maxDuration: spec.duration,
+      stacks: spec.stacks ?? 1,
+      onEnd: spec.onEnd,
+    };
+    spec.onApply?.( this );
+    this.statuses.push( st );
+    return st;
+  }
+
+  _tickStatuses( dt ) {
+    for ( let i = this.statuses.length - 1; i >= 0; i-- ) {
+      const st = this.statuses[ i ];
+      st.duration -= dt;
+      if ( st.duration <= 0 ) {
+        this.statuses.splice( i, 1 );
+        st.onEnd?.( this );
+      }
+    }
   }
 
   heal( amount ) {
@@ -278,6 +326,7 @@ export class Unit {
 
   update( dt, elapsed, ctx ) {
     if ( this.dead ) {
+      this.statuses.length = 0;
       this.downedTimer += dt;
       this.animator.setSpeed( 0 );
       this.character.update( dt, elapsed );
@@ -293,6 +342,8 @@ export class Unit {
       this._armorFloat = Math.min( this.armorMax, ( this._armorFloat ?? 0 ) + dt * 0.45 );
       this.armor = Math.ceil( this._armorFloat );
     }
+
+    this._tickStatuses( dt );
 
     this._think -= dt;
     if ( this._think <= 0 ) {

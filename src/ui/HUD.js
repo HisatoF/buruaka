@@ -296,6 +296,10 @@ const DAMAGE_KIND_ALIAS = {
   healing: 'heal',
 };
 
+/** Screen-space footprint used for nameplate de-collision, in px. */
+const PLATE_W = 108;
+const PLATE_H = 30;
+
 export class HUD {
   /**
    * @param {HTMLElement} root  container (e.g. #ui-root)
@@ -1052,6 +1056,9 @@ export class HUD {
   }
 
   _updWorld( s, cam ) {
+    // Reset the per-frame plate de-collision list before any placement.
+    if ( !this._placedPlates ) this._placedPlates = [];
+    this._placedPlates.length = 0;
     const list = s.markers;
     if ( list ) {
       const seen = this._mkSeen || ( this._mkSeen = new Set() );
@@ -1127,9 +1134,29 @@ export class HUD {
       tog( m.el, 'is-off', false );
       tog( m.el, 'is-hidden', out );
       tog( m.el, 'is-occluded', m.occluded );
-      const s = CLAMP( 16 / Math.max( 2, p.d ), 0.5, 1.25 );
+      // Clamped tighter than before: at 0.5x the 11px name rendered at 5.5px,
+      // which is not legible at any viewing distance.
+      const s = CLAMP( 16 / Math.max( 2, p.d ), 0.8, 1.15 );
       cssVar( m.inner, '--s', s.toFixed( 3 ) );
     }
+
+    // De-collide against plates already placed this frame. A late wave puts
+    // several identical plates on the same screen row, where they overlap into
+    // an unreadable stripe of repeated text.
+    const placed = this._placedPlates;
+    if ( !out ) {
+      let guard = 0;
+      for ( let i = 0; i < placed.length; i++ ) {
+        const q = placed[ i ];
+        if ( Math.abs( q.x - sx ) > PLATE_W || Math.abs( q.y - sy ) > PLATE_H ) continue;
+        // Push the further plate up, so the nearer threat keeps its anchor.
+        sy = q.y - PLATE_H;
+        if ( ++guard > 12 ) break;   // bounded: never ping-pong on a busy frame
+        i = -1;                      // re-test against everything after moving
+      }
+      placed.push( { x: sx, y: sy } );
+    }
+
     m.el.style.transform = `translate3d(${ sx.toFixed( 1 ) }px, ${ sy.toFixed( 1 ) }px, 0)`;
   }
 

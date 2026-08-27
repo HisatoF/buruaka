@@ -24,6 +24,8 @@ export const SKILLS = {
       const target = caster.target ?? nearestHostile( game, caster );
       if ( !target ) return;
 
+      caster.addStatus( { id: 'focus', kind: 'buff', icon: '\u25b2', name: 'Covering Fire', duration: 1.4 } );
+
       // Twelve rounds over 1.2 s, fired straight from the muzzle regardless of
       // line of sight — the point of the skill is that it beats cover.
       let fired = 0;
@@ -61,8 +63,15 @@ export const SKILLS = {
         if ( d > 7 ) continue;
         const falloff = 1 - ( d / 7 ) * 0.55;
         const dealt = h.takeDamage( 260 * falloff, forward( caster, _v2 ), 'weakness' );
-        h.moveSpeed *= 0.55;
-        setTimeout( () => { if ( h ) h.moveSpeed /= 0.55; }, 4000 );
+        h.addStatus( {
+          id: 'slow',
+          kind: 'debuff',
+          icon: '\u2193',
+          name: 'Suppressed',
+          duration: 4,
+          onApply: ( u ) => { u.moveSpeed *= 0.55; },
+          onEnd: ( u ) => { u.moveSpeed /= 0.55; },
+        } );
         game._pendingDamage.push( { value: Math.round( dealt ), kind: 'weakness', position: h.chestPoint( new THREE.Vector3() ) } );
       }
     },
@@ -113,8 +122,15 @@ export const SKILLS = {
       for ( const u of game.squad ) {
         if ( u.dead ) continue;
         const healed = u.heal( u.maxHp * 0.32 );
-        u.armor += 2;
-        setTimeout( () => { if ( u ) u.armor = Math.max( u.armorMax, u.armor - 2 ); }, 8000 );
+        u.addStatus( {
+          id: 'ward',
+          kind: 'shield',
+          icon: '\u25c6',
+          name: 'Field Ward',
+          duration: 8,
+          onApply: ( t ) => { t.armorMax += 2; t._armorFloat = ( t._armorFloat ?? t.armor ) + 2; t.armor = Math.ceil( t._armorFloat ); },
+          onEnd: ( t ) => { t.armorMax -= 2; t._armorFloat = Math.min( t._armorFloat ?? 0, t.armorMax ); t.armor = Math.ceil( t._armorFloat ); },
+        } );
 
         game.vfx.emit( 'healPulse', { position: u.position, scale: 1.2 } );
         if ( healed > 0 ) {

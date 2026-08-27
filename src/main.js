@@ -48,7 +48,7 @@ async function main() {
   const hud = new HUD( uiRoot, {
     onSkill: ( i ) => game.useSkill( i ),
     onStart: () => startMission(),
-    onRestart: () => location.reload(),
+    onRestart: () => { game.restart(); hud.banner( 'OPERATION START', 'KIVOTOS PLAZA', 'wave' ); },
     onSettings: ( s ) => applySettings( s ),
     onStick: ( v ) => { input.stick.set( v.x, v.y ); },
     onPause: () => { paused = !paused; },
@@ -255,8 +255,15 @@ async function main() {
 
   // Lets the capture harness drop straight into a live firefight instead of
   // photographing the title screen.
-  window.__startMission = ( fastForwardSeconds = 0 ) => {
+  window.__startMission = ( fastForwardSeconds = 0, opts = {} ) => {
     if ( game.phase === 'title' ) startMission();
+    if ( opts.wave ) {
+      // Jump the director so a capture can reach a late wave (or the boss)
+      // without simulating every earlier one.
+      game.director.wave = Math.max( 0, opts.wave - 1 );
+      game.director._state = 'between';
+      game.director._timer = 0.01;
+    }
     // Step the simulation forward in fixed slices so waves spawn and units
     // engage before the screenshot is taken.
     const step = 1 / 60;

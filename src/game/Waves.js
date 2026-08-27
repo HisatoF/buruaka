@@ -17,7 +17,7 @@ const WAVES = [
   { grunts: 5, heavies: 2, delay: 4.0 },
   { grunts: 6, heavies: 2, delay: 4.5 },
   { grunts: 6, heavies: 3, delay: 4.5 },
-  { grunts: 8, heavies: 3, delay: 5.0 },
+  { grunts: 8, heavies: 3, delay: 5.0, boss: true },
 ];
 
 const _v = new THREE.Vector3();
@@ -86,6 +86,8 @@ export class WaveDirector {
 
     // Interleave so heavies don't all arrive last.
     this._spawnQueue.sort( () => Math.random() - 0.5 );
+    // The boss lands last, so the escort is already engaged when it arrives.
+    if ( spec.boss ) this._spawnQueue.push( 'hieromonk' );
     this._spawnTimer = 0;
 
     this.game._events.push( { type: 'wave', wave: this.wave, total: this.totalWaves } );
@@ -111,7 +113,25 @@ export class WaveDirector {
     pos.z += ( Math.random() - 0.5 ) * 2.5;
 
     const unit = this.game.spawnHostile( kind, pos );
-    this.game.vfx.emit( 'dust', { position: pos, scale: 1.4 } );
+
+    if ( unit.character.design.boss ) {
+      unit.maxHp = unit.hp = 26000;
+      unit.armor = unit.armorMax = unit._armorFloat = 6;
+      unit.moveSpeed *= 0.62;
+      // Phase gates the HUD's boss bar renders as segment marks.
+      unit.phases = [
+        { label: 'PHASE I', at: 1 },
+        { label: 'PHASE II', at: 0.66 },
+        { label: 'PHASE III', at: 0.33 },
+      ];
+      this.game.boss = unit;
+      this.game.hud?.banner?.( 'HIEROMONK', 'PRIORITY TARGET', 'boss' );
+      this.game.audio?.setState?.( 'boss' );
+      this.game.cameraRig.shake( 0.8, 1.6 );
+      this.game.vfx.emit( 'explosion', { position: pos, scale: 0.7, count: 0.8 } );
+    } else {
+      this.game.vfx.emit( 'dust', { position: pos, scale: 1.4 } );
+    }
     return unit;
   }
 

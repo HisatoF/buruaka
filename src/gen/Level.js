@@ -68,8 +68,8 @@ function crate( size = 1.0 ) {
   }
   // A stencilled panel on two faces breaks up the flat orange.
   for ( const sz of [ -1, 1 ] ) {
-    parts.push( paintGeometry( xform( roundedBox( size * 0.44, size * 0.30, 0.012, 0.01, 1 ),
-      { position: [ 0, size * 0.05, sz * ( size * 0.5 + 0.006 ) ] } ), 0xf0dcc0 ) );
+    parts.push( paintGeometry( xform( roundedBox( size * 0.42, size * 0.28, 0.030, 0.008, 1 ),
+      { position: [ 0, size * 0.05, sz * ( size * 0.5 + 0.012 ) ] } ), 0xf2e2c8 ) );
   }
   return mergeGeometries( parts );
 }
