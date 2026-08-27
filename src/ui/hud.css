@@ -1604,11 +1604,19 @@
 .fx { z-index: 9 !important; }
 
 /* A full-screen white-out at opacity 1 is a photosensitivity hazard with no
-   way to turn it down. Cap the peak and keep the tint at the edges. */
-.fx__flash { opacity: 0.45 !important; }
+   way to turn it down. Cap the animation's PEAK — an `opacity` override on the
+   element itself pins it on permanently instead of limiting the flash, which
+   left a coral wash over the entire frame from the moment anything died. */
+@keyframes flash-on {
+  0%   { opacity: 0.45; }
+  100% { opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .fx__flash { opacity: 0.18 !important; }
-  .fx__low   { opacity: 0.35 !important; }
+  @keyframes flash-on {
+    0%   { opacity: 0.16; }
+    100% { opacity: 0; }
+  }
+  @keyframes low-pulse { 0%, 100% { opacity: .05 } 50% { opacity: .11 } }
 }
 
 /* Grayscaling the whole dead card desaturated the red RETIRE overlay into
