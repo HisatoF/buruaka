@@ -445,11 +445,17 @@ export class HUD {
     el( 'i', 'ticks', bar );
     el( 'i', 'gloss', bar );
 
+    // Ammo sliver. The magazine state was tracked every frame and never shown,
+    // so a player had no way to anticipate the reload that was about to stop
+    // a unit shooting for two seconds.
+    const ammo = el( 'div', 'unit__ammo', body );
+    const ammoFill = el( 'i', null, ammo );
+
     const pips = el( 'div', 'unit__pips', body );
     const status = el( 'div', 'unit__status', body );
 
-    return { el: root, refs: { port, role, retire, name, hpNow, hpMax, bar, ghost, fill, pips, status },
-      ghostV: 1, hp: -1, pipN: -1, statusKey: '', order: -1 };
+    return { el: root, refs: { port, role, retire, name, hpNow, hpMax, bar, ghost, fill, ammo, ammoFill, pips, status },
+      ghostV: 1, hp: -1, pipN: -1, statusKey: '', order: -1, ammoK: '' };
   }
 
   _buildDeck() {
@@ -894,6 +900,18 @@ export class HUD {
   }
 
   _updUnit( c, u ) {
+    // --- ammo ---------------------------------------------------------
+    const mag = u.ammoMax || 0;
+    const ammoKey = `${u.ammo}/${mag}|${u.reloading ? 1 : 0}`;
+    if ( c.ammoK !== ammoKey ) {
+      c.ammoK = ammoKey;
+      const frac = mag > 0 ? CLAMP( u.ammo / mag, 0, 1 ) : 0;
+      cssVar( c.refs.ammoFill, '--w', ( frac * 100 ).toFixed( 1 ) + '%' );
+      tog( c.refs.ammo, 'is-reloading', !!u.reloading );
+      tog( c.refs.ammo, 'is-low', !u.reloading && frac > 0 && frac <= 0.25 );
+      tog( c.refs.ammo, 'is-hidden', mag <= 0 );
+    }
+
     const r = c.refs;
     txt( r.name, u.name || '???' );
     txt( r.role, ( u.role || '' ).slice( 0, 3 ).toUpperCase() );

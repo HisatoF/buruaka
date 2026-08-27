@@ -1795,3 +1795,49 @@
 
 /* Emerald was the only saturated green in an otherwise disciplined palette. */
 .unit__bar .fill { background: linear-gradient(180deg, #6fe0a6, #2aa878) !important; }
+
+/* --- ammo sliver on the roster card ------------------------------------ */
+.unit__ammo {
+  position: relative;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 99px;
+  background: rgba(33, 48, 74, .16);
+  overflow: hidden;
+}
+.unit__ammo.is-hidden { display: none; }
+.unit__ammo i {
+  display: block;
+  height: 100%;
+  width: var(--w, 100%);
+  border-radius: 99px;
+  background: linear-gradient(180deg, #cfe0f2, #8aa6c8);
+  transition: width .12s linear;
+}
+.unit__ammo.is-low i { background: linear-gradient(180deg, #ffd54a, #e0940f); }
+.unit__ammo.is-reloading i {
+  width: 100% !important;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(53, 163, 234, .9) 0 6px,
+    rgba(53, 163, 234, .32) 6px 12px
+  );
+  animation: ammo-reload .7s linear infinite;
+}
+@keyframes ammo-reload { to { background-position: 17px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .unit__ammo.is-reloading i { animation: none; }
+}
+
+/* The skill card's art is a full-bleed rectangle inside a -12deg skewed box
+   with overflow hidden, so the shear left bare wedges at two corners.
+   Oversizing the art past the card's own bounds fills them. */
+.skill__art {
+  inset: -8% -16% !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* The banner's hazard stripe ran the full width of an unskewed band, so it
+   overshot the skewed ends. Inset it by the shear amount. */
+.bn__stripe { left: 3% !important; right: 3% !important; }

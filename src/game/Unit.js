@@ -104,6 +104,11 @@ export class Unit {
 
   get position() { return this.body.position; }
 
+  /** Rounds left in the magazine, and whether a reload is in progress. */
+  get ammo() { return this._ammo; }
+  get ammoMax() { return this.stats.mag ?? 0; }
+  get reloading() { return this._reloadTimer > 0; }
+
   /** Eye/chest height, where shots originate and are aimed. */
   chestPoint( out = _v ) {
     return out.copy( this.body.position ).setY( this.body.position.y + 1.15 * ( this.character.design.scale ?? 1 ) );

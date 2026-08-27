@@ -444,6 +444,9 @@ export class Game {
         armorMax: u.armorMax,
         dead: u.dead,
         active: !u.dead,
+        ammo: u.ammo,
+        ammoMax: u.ammoMax,
+        reloading: u.reloading,
         status: u.statuses,
       } );
     }
