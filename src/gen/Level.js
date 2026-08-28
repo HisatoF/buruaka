@@ -512,12 +512,18 @@ export class Level {
     const groundMat = createToonMaterial( this._toonProps( {
       map: plaza.map,
       normalMap: plaza.normalMap,
-      normalScale: 0.7,
-      uvScale: [ 14, 16 ],
-      color: 0xffffff,
+      normalScale: 0.45,
+      // Fewer, larger tiles. At 14x16 across a 110 m plane the same stain
+      // repeated every ~8 m and the eye counted the copies immediately.
+      uvScale: [ 7, 8 ],
+      color: 0xf4f6fa,
       vertexTint: false,
       specStrength: 0.03,
       rimStrength: 0,
+      // Paving is stone, not cloth: its shadow should stay neutral rather
+      // than picking up the violet the character ramp uses.
+      shadowTint: 0xb6b4c2,
+      midTint: 0xdad8e2,
     } ) );
     this._materials.push( groundMat );
 
@@ -536,12 +542,14 @@ export class Level {
     const roadMat = createToonMaterial( this._toonProps( {
       map: paving.map,
       normalMap: paving.normalMap,
-      normalScale: 0.5,
-      color: 0xd8dde6,
-      uvScale: [ 2.6, 16 ],
+      normalScale: 0.35,
+      color: 0xe2e6ec,
+      uvScale: [ 1.6, 9 ],
       vertexTint: false,
       specStrength: 0.02,
       rimStrength: 0,
+      shadowTint: 0xb2b0be,
+      midTint: 0xd6d4de,
     } ) );
     this._materials.push( roadMat );
 

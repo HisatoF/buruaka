@@ -263,6 +263,10 @@ async function main() {
 
   window.__capture = ( name ) => {
     let f = framings[ name ];
+    // `game` is the live rig. Selecting it has to hand control *back*, or a
+    // capture run that took any static framing first stays frozen there and
+    // every later shot silently repeats it.
+    if ( name === 'game' ) { game.cameraRig.enabled = true; return; }
     if ( typeof f === 'string' ) f = dynamicFraming( f );
     if ( !f ) return;
     game.cameraRig.enabled = false;

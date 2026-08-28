@@ -366,34 +366,74 @@ export class Animator {
     if ( w < 0.02 ) return;
 
     const a = this.phase * TAU;
-    const stride = 0.55 + w * 0.55;
 
-    // Legs: thigh swings sinusoidally, the shin only ever bends backward
-    // (a knee that hyperextends is the classic procedural-walk tell).
-    p.add( 'thighL', [ Math.sin( a ) * stride, 0, 0 ], w );
-    p.add( 'thighR', [ Math.sin( a + Math.PI ) * stride, 0, 0 ], w );
-    p.add( 'shinL', [ -Math.max( 0, Math.sin( a - 0.9 ) ) * stride * 1.5, 0, 0 ], w );
-    p.add( 'shinR', [ -Math.max( 0, Math.sin( a + Math.PI - 0.9 ) ) * stride * 1.5, 0, 0 ], w );
-    p.add( 'footL', [ Math.max( 0, Math.sin( a + 0.6 ) ) * 0.45 - 0.1, 0, 0 ], w );
-    p.add( 'footR', [ Math.max( 0, Math.sin( a + Math.PI + 0.6 ) ) * 0.45 - 0.1, 0, 0 ], w );
+    /*
+     * A run cycle is not a sine wave on the thigh. Driving both joints from
+     * the same phase gives a straight-legged scissor — the "skate lunge" this
+     * used to have. The parts that actually read as running are:
+     *
+     *   - a short stance and a long swing, so a foot spends most of the cycle
+     *     in the air rather than half and half;
+     *   - the knee folding hard during swing and extending just before
+     *     contact, which is where the leg's silhouette changes most;
+     *   - the ankle leading on contact and pushing off at the end of stance.
+     *
+     * `lift` below is the swing-phase weight for one leg; `plant` is its
+     * complement. Everything else keys off those.
+     */
+    const stride = 0.42 + w * 0.36;
 
-    // Counter-rotating hips and chest.
-    p.add( 'hips', [ 0, -Math.sin( a ) * 0.14, 0 ], w );
-    p.add( 'chest', [ 0.10 + w * 0.14, Math.sin( a ) * 0.16, 0 ], w );
-    p.add( 'spine', [ 0.05 + w * 0.06, 0, 0 ], w );
+    const leg = ( phase, sign ) => {
+      const s = Math.sin( phase );
+      const c = Math.cos( phase );
+      // Swing weight: 1 through the airborne half, 0 while planted.
+      const lift = Math.max( 0, s );
+      const plant = Math.max( 0, -s );
 
-    // Vertical bob at twice the stride frequency, plus a lateral roll.
-    p.addPos( 'hips', [ 0, Math.abs( Math.sin( a ) ) * 0.035 * w - 0.012 * w, 0 ], 1 );
-    p.add( 'hips', [ 0, 0, Math.sin( a * 2 ) * 0.03 ], w );
+      // Thigh drives forward through swing and trails through stance.
+      const thigh = s * stride + lift * 0.22;
+      // Knee folds hardest early in swing, then extends to meet the ground.
+      const shin = -( Math.max( 0, Math.sin( phase - 0.55 ) ) ** 1.4 ) * ( 1.15 + w * 0.75 );
+      // Ankle: toe leads on contact, pushes off at the end of stance.
+      const foot = lift * 0.34 - plant * 0.20 * Math.max( 0, c ) - 0.06;
+
+      return { thigh, shin, foot, lift, plant };
+    };
+
+    const L = leg( a, -1 );
+    const R = leg( a + Math.PI, 1 );
+
+    p.add( 'thighL', [ L.thigh, 0, 0 ], w );
+    p.add( 'thighR', [ R.thigh, 0, 0 ], w );
+    p.add( 'shinL', [ L.shin, 0, 0 ], w );
+    p.add( 'shinR', [ R.shin, 0, 0 ], w );
+    p.add( 'footL', [ L.foot, 0, 0 ], w );
+    p.add( 'footR', [ R.foot, 0, 0 ], w );
+
+    // Legs track slightly inward under the body's centre line rather than
+    // swinging in two parallel planes, which is what made the stance splay.
+    p.add( 'thighL', [ 0, 0, 0.055 + L.lift * 0.035 ], w );
+    p.add( 'thighR', [ 0, 0, -0.055 - R.lift * 0.035 ], w );
+
+    // Counter-rotating hips and chest, and a lean that grows with speed.
+    p.add( 'hips', [ 0, -Math.sin( a ) * 0.13, 0 ], w );
+    p.add( 'chest', [ 0.09 + w * 0.16, Math.sin( a ) * 0.15, 0 ], w );
+    p.add( 'spine', [ 0.05 + w * 0.07, 0, 0 ], w );
+
+    // Vertical bob peaks at mid-stance, not at the crossover: the body is
+    // highest when it is vaulting over a planted foot.
+    const bob = Math.abs( Math.cos( a ) );
+    p.addPos( 'hips', [ 0, bob * 0.030 * w - 0.016 * w, 0 ], 1 );
+    p.add( 'hips', [ 0, 0, Math.sin( a * 2 ) * 0.026 ], w );
 
     // Arms counter-swing, but only where the aim layer isn't overriding them.
     const armW = w * ( 1 - this.aimWeight );
-    p.add( 'upperArmL', [ -Math.sin( a ) * 0.85, 0, 0.10 ], armW );
-    p.add( 'upperArmR', [ Math.sin( a ) * 0.85, 0, -0.10 ], armW );
-    p.add( 'lowerArmL', [ -0.35 - Math.max( 0, Math.sin( a ) ) * 0.5, 0, 0 ], armW );
-    p.add( 'lowerArmR', [ -0.35 - Math.max( 0, -Math.sin( a ) ) * 0.5, 0, 0 ], armW );
+    p.add( 'upperArmL', [ -Math.sin( a ) * 0.78, 0, 0.13 ], armW );
+    p.add( 'upperArmR', [ Math.sin( a ) * 0.78, 0, -0.13 ], armW );
+    p.add( 'lowerArmL', [ -0.62 - Math.max( 0, Math.sin( a ) ) * 0.45, 0, 0 ], armW );
+    p.add( 'lowerArmR', [ -0.62 - Math.max( 0, -Math.sin( a ) ) * 0.45, 0, 0 ], armW );
 
-    p.add( 'head', [ -0.05 * w, 0, 0 ], 1 );
+    p.add( 'head', [ -0.045 * w, 0, 0 ], 1 );
   }
 
   _flinchLayer( p ) {
