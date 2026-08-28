@@ -169,18 +169,20 @@ export function buildWeapon( kind, opts = {} ) {
   } );
 
   const outlineMaterial = createOutlineMaterial( {
-    color: 0x1c2130, thickness: 0.0044, vertexTint: true, tintMix: 0.40,
+    color: 0x14181f, thickness: 0.0044, vertexTint: true, tintMix: 0.18,
   } );
 
   const group = new THREE.Group();
   group.name = `weapon_${kind}`;
 
   const mesh = new THREE.Mesh( geometry, material );
+  mesh.renderOrder = 1;
   mesh.castShadow = true;
   mesh.frustumCulled = false;
   group.add( mesh );
 
   const outline = new THREE.Mesh( geometry, outlineMaterial );
+  outline.renderOrder = 0;
   outline.castShadow = false;
   outline.frustumCulled = false;
   group.add( outline );

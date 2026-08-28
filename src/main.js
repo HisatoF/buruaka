@@ -346,6 +346,28 @@ async function main() {
     return { world, pairs, units: units.length };
   };
 
+  /**
+   * Reports whether the page is in a state worth photographing.
+   *
+   * Under software rendering the WebGL context can be lost mid-run and the
+   * page falls back to the boot screen — and a harness that only watches the
+   * console will save that frame and report success, so a review round gets
+   * written against pictures of a loading spinner. This has actually happened.
+   */
+  window.__captureHealth = () => {
+    const bootEl = document.getElementById( 'boot' );
+    const gl = engine.renderer.getContext();
+    const bootVisible = !!bootEl
+      && bootEl.style.display !== 'none'
+      && parseFloat( getComputedStyle( bootEl ).opacity ) > 0.02;
+    return {
+      ok: !bootVisible && !gl.isContextLost() && game.phase !== 'title',
+      phase: game.phase,
+      contextLost: gl.isContextLost(),
+      bootVisible,
+    };
+  };
+
   window.__diagnostics = () => ( {
     penetration: window.__penetration(),
     drawCalls: engine.renderer.info.render.calls,

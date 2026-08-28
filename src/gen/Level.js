@@ -16,6 +16,7 @@ import { makeAsphalt, makePavementTiles, makeConcrete, makeBrick, makePaintedMet
  */
 
 const V = ( x, y, z ) => new THREE.Vector3( x, y, z );
+const _v1 = new THREE.Vector3();
 
 export const ARENA = {
   halfWidth: 26,
@@ -86,10 +87,17 @@ function container( length = 6, height = 2.6, width = 2.4, color ) {
     parts.push( paintGeometry( xform( roundedBox( width + 0.05, height * 0.82, 0.07, 0.02, 1 ),
       { position: [ 0, 0, z ] } ), color ) );
   }
-  // Frame rails top and bottom.
+  // Frame rails top and bottom. Inset below the faces rather than sitting
+  // flush: a full-footprint slab at the roof line covers the entire roof in
+  // grey, which from an elevated camera reads as a lid, not a rail.
   for ( const sy of [ -1, 1 ] ) {
-    parts.push( paintGeometry( xform( roundedBox( width + 0.09, 0.16, length + 0.09, 0.04, 1 ),
-      { position: [ 0, sy * ( height / 2 - 0.08 ), 0 ] } ), LEVEL_COLORS.metal ) );
+    parts.push( paintGeometry( xform( roundedBox( width + 0.08, 0.15, length + 0.08, 0.04, 1 ),
+      { position: [ 0, sy * ( height / 2 - 0.17 ), 0 ] } ), LEVEL_COLORS.metal ) );
+  }
+  // Corner posts, which is what actually reads as a container frame.
+  for ( const sx of [ -1, 1 ] ) for ( const sz of [ -1, 1 ] ) {
+    parts.push( paintGeometry( xform( roundedBox( 0.13, height, 0.13, 0.03, 1 ),
+      { position: [ sx * width / 2, 0, sz * length / 2 ] } ), LEVEL_COLORS.metal ) );
   }
   return mergeGeometries( parts );
 }
@@ -442,7 +450,7 @@ export class Level {
     this._geometries = [];
 
     this.outlineMaterial = createOutlineMaterial( {
-      color: 0x39405c, thickness: 0.0042, vertexTint: true, tintMix: 0.45,
+      color: 0x2a3049, thickness: 0.0042, vertexTint: true, tintMix: 0.20,
     } );
 
     this._buildGround( opts.quality ?? 2 );
@@ -480,8 +488,10 @@ export class Level {
     this.group.add( mesh );
     this._geometries.push( geo );
 
+    mesh.renderOrder = 1;
     if ( outline ) {
       const o = new THREE.Mesh( geo, this.outlineMaterial );
+      o.renderOrder = 0;
       o.castShadow = false;
       o.receiveShadow = false;
       this.group.add( o );
@@ -800,9 +810,9 @@ export class Level {
    * Scores by cover quality, proximity, and whether the cover actually sits
    * between the unit and the threat.
    */
-  findCover( from, threat, maxDistance = 14 ) {
+  findCover( from, threat, maxDistance = 14, spacing = 3.8 ) {
     let best = null, bestScore = -Infinity;
-    const toThreat = new THREE.Vector3().subVectors( threat, from ).setY( 0 ).normalize();
+    const toThreat = _v1.subVectors( threat, from ).setY( 0 ).normalize();
 
     for ( const cp of this.coverPoints ) {
       if ( cp.occupied ) continue;
@@ -813,7 +823,18 @@ export class Level {
       const facing = -cp.normal.dot( toThreat );
       if ( facing < 0.15 ) continue;
 
-      const score = cp.quality * 2.2 + facing * 1.6 - dist * 0.12;
+      // Penalise slots crowded against a teammate's. Four slots around one
+      // container all score well and sit two metres apart, so without this the
+      // whole squad piles onto a single prop and stops reading as a squad —
+      // and one grenade would take all four.
+      let crowding = 0;
+      for ( const other of this.coverPoints ) {
+        if ( !other.occupied || other === cp ) continue;
+        const d = other.position.distanceTo( cp.position );
+        if ( d < spacing ) crowding += ( 1 - d / spacing ) * 4.2;
+      }
+
+      const score = cp.quality * 2.2 + facing * 1.6 - dist * 0.12 - crowding;
       if ( score > bestScore ) { bestScore = score; best = cp; }
     }
     return best;

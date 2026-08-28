@@ -230,7 +230,7 @@ export function strand( path, widthAt, opts = {} ) {
   geo.setAttribute( 'uv', new THREE.Float32BufferAttribute( uvs, 2 ) );
   geo.setIndex( indices );
   geo.userData.tipSharpness = tipSharpness;
-  return geo;
+  return orientOutward( geo );
 }
 
 /* ---------------------------------------------------------------------- */
@@ -532,5 +532,73 @@ export function pleatedSkirt( {
   geo.setAttribute( 'uv', new THREE.Float32BufferAttribute( uvs, 2 ) );
   geo.setIndex( indices );
   geo.computeVertexNormals();
+  return orientOutward( geo );
+}
+
+/**
+ * Forces a swept surface's triangles to wind outward.
+ *
+ * `profileTube`, `strand` and `pleatedSkirt` all emit the same index pattern,
+ * but the resulting winding depends on which way the sweep runs: a tube built
+ * bottom-to-top winds outward, and the same code sweeping top-to-bottom — a
+ * skirt from waist to hem, a twintail from scalp to tip — winds inward. Those
+ * surfaces are then back-face culled and vanish, and the only reason they
+ * appeared on screen at all was the BackSide outline hull painting them in.
+ * Which is why skirts and hanging hair looked like flat ink.
+ *
+ * Rather than hand-track sweep direction at every call site, this measures it:
+ * sample face normals against the direction from the mesh's centre, and flip
+ * everything if the majority point inward.
+ */
+export function orientOutward( geo ) {
+  const index = geo.getIndex();
+  const pos = geo.attributes.position;
+  if ( !index ) return geo;
+
+  geo.computeBoundingSphere();
+  const c = geo.boundingSphere.center;
+
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3(), outward = new THREE.Vector3();
+
+  const arr = index.array;
+  const triCount = arr.length / 3;
+  const step = Math.max( 1, Math.floor( triCount / 64 ) );
+  let score = 0;
+
+  for ( let t = 0; t < triCount; t += step ) {
+    const i0 = arr[ t * 3 ], i1 = arr[ t * 3 + 1 ], i2 = arr[ t * 3 + 2 ];
+    a.fromBufferAttribute( pos, i0 );
+    b.fromBufferAttribute( pos, i1 );
+    d.fromBufferAttribute( pos, i2 );
+    ab.subVectors( b, a );
+    ac.subVectors( d, a );
+    n.crossVectors( ab, ac );
+    if ( n.lengthSq() < 1e-14 ) continue;
+
+    outward.copy( a ).add( b ).add( d ).multiplyScalar( 1 / 3 ).sub( c );
+    if ( outward.lengthSq() < 1e-12 ) continue;
+
+    score += Math.sign( n.dot( outward ) );
+  }
+
+  if ( score >= 0 ) return geo;
+
+  // Majority inward: reverse every triangle and negate the stored normals.
+  for ( let t = 0; t < triCount; t++ ) {
+    const i = t * 3;
+    const tmp = arr[ i ];
+    arr[ i ] = arr[ i + 2 ];
+    arr[ i + 2 ] = tmp;
+  }
+  index.needsUpdate = true;
+
+  const nrm = geo.attributes.normal;
+  if ( nrm ) {
+    for ( let i = 0; i < nrm.count; i++ ) {
+      nrm.setXYZ( i, -nrm.getX( i ), -nrm.getY( i ), -nrm.getZ( i ) );
+    }
+    nrm.needsUpdate = true;
+  }
   return geo;
 }

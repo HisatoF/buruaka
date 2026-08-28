@@ -1448,6 +1448,9 @@ export class GroundDecalPool {
     const cp = ( a ) => { a[ i ] = a[ last ]; };
     cp( L.life ); cp( L.maxLife ); cp( L.fade ); cp( L.grow );
     cp( L.op ); cp( L.radius ); cp( L.px ); cp( L.py ); cp( L.pz ); cp( L.rot );
+    // The surface normals are part of a slot's state now; leaving them out of
+    // the swap-remove silently reorients every decal that outlives a neighbour.
+    cp( L.nx ); cp( L.ny ); cp( L.nz );
     for ( let k = 0; k < 3; k++ ) L.aColor[ i * 3 + k ] = L.aColor[ last * 3 + k ];
     for ( let k = 0; k < 4; k++ ) L.aParams[ i * 4 + k ] = L.aParams[ last * 4 + k ];
     const m = L.mesh.instanceMatrix.array;
@@ -2071,8 +2074,11 @@ export class ParticleSystem {
       dOpt.y = undefined;
       dOpt.fade = undefined;
       dOpt.rotation = undefined;
-      // Only stamp decals that actually land on the ground plane.
-      if ( Math.abs( py - this.groundY ) < 0.6 ) this.decals.spawn( dOpt );
+      // Decals orient to the surface they land on now, so a wall or crate hit
+      // marks the thing that was actually shot. The old ground-plane gate meant
+      // the arena came through a whole firefight without a single mark on it.
+      dOpt.normal = { x: dx, y: dy, z: dz };
+      this.decals.spawn( dOpt );
     }
     this.stats.emits++;
     return this;

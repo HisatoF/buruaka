@@ -404,6 +404,7 @@ const outlineVertex = /* glsl */ `
 
 uniform float uThickness;
 uniform float uMinPixels;
+uniform float uDepthPush;
 uniform vec2  uResolution;
 
 attribute vec3 aSmoothNormal;
@@ -460,6 +461,17 @@ void main() {
   float px = max( uThickness * uResolution.y * 0.5, uMinPixels );
   clip.xy += dir * ( px / uResolution ) * clip.w * 2.0;
 
+  // Push the hull away from the camera as well as outward.
+  //
+  // Expanding only in XY leaves the back face of a thin shell — a hair strand,
+  // a skirt pleat — at essentially the same depth as its front face. The depth
+  // test then ties, and the hull wins about half the time, so the outline
+  // stops edging the silhouette and starts painting over the surface: blonde
+  // twintails render as dark ink, navy skirts render as black. Biasing the
+  // hull backwards makes it lose that tie everywhere except where there is no
+  // front face at all, which is exactly the silhouette.
+  clip.z += uDepthPush * clip.w;
+
   gl_Position = clip;
 }
 `;
@@ -487,8 +499,8 @@ void main() {
 `;
 
 export function createOutlineMaterial( {
-  color = 0x2b2138, thickness = 0.0068, minPixels = 2.6,
-  vertexTint = false, tintMix = 0.42,
+  color = 0x1b1524, thickness = 0.0068, minPixels = 3.2,
+  vertexTint = false, tintMix = 0.16, depthPush = 0.0022,
 } = {} ) {
   return new THREE.ShaderMaterial( {
     defines: vertexTint ? { USE_VERTEX_TINT: '' } : {},
@@ -500,6 +512,7 @@ export function createOutlineMaterial( {
       uTintMix: { value: tintMix },
       uThickness: { value: thickness },
       uMinPixels: { value: minPixels },
+      uDepthPush: { value: depthPush },
       uResolution: { value: new THREE.Vector2( 1920, 1080 ) },
     },
   } );

@@ -31,7 +31,7 @@ export const PALETTE = {
   enemyRed: 0xff5d6c,
   cost: 0xffd54a,
   halo: 0x9fe8ff,
-  ink: 0x2b2138,
+  ink: 0x1b1524,
 };
 
 /**
@@ -728,9 +728,9 @@ export class Character {
     // --- materials -------------------------------------------------------
     const outlineMat = createOutlineMaterial( {
       color: design.outlineColor ?? PALETTE.ink,
-      thickness: 0.0055,
+      thickness: 0.0062,
       vertexTint: true,
-      tintMix: 0.45,
+      tintMix: 0.16,
     } );
     this.outlineMaterial = outlineMat;
 
@@ -933,6 +933,7 @@ export class Character {
   _addSkinned( name, geometry, material, outlineMaterial, skeleton ) {
     const mesh = new THREE.SkinnedMesh( geometry, material );
     mesh.name = name;
+    mesh.renderOrder = 1;
     mesh.castShadow = true;
     mesh.receiveShadow = false;
     mesh.frustumCulled = false; // skinned bounds go stale as the pose changes
@@ -943,6 +944,9 @@ export class Character {
     if ( outlineMaterial ) {
       const outline = new THREE.SkinnedMesh( geometry, outlineMaterial );
       outline.name = `${name}_outline`;
+      // Drawn before the surface: with both writing depth, the surface then
+      // overwrites the hull wherever they tie.
+      outline.renderOrder = 0;
       outline.castShadow = false;
       outline.receiveShadow = false;
       outline.frustumCulled = false;

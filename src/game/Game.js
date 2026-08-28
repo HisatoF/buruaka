@@ -33,7 +33,14 @@ export class Game {
 
     this.physics = new PhysicsWorld( { gravity: -22, cellSize: 4 } );
     this.ballistics = new Ballistics( this.physics, { capacity: 512 } );
-    this.vfx = new ParticleSystem( scene, { camera, capacity: quality >= 2 ? 4000 : 1800 } );
+    // The decal pool defaults to 48, which is a handful of marks spread over a
+    // 50 m arena — enough to look like nothing happened. It is one instanced
+    // draw call either way.
+    this.vfx = new ParticleSystem( scene, {
+      camera,
+      capacity: quality >= 2 ? 4000 : 1800,
+      decals: quality >= 2 ? 120 : 48,
+    } );
 
     this.level = new Level( this.physics, { quality } );
     scene.add( this.level.group );
@@ -200,7 +207,7 @@ export class Game {
         type: 'bullet',
         radius: 0.075 + Math.random() * 0.045,
         opacity: 0.40,
-        life: 16,
+        life: 45,
         rotation: Math.random() * Math.PI * 2,
         color: 0x2f2a3d,
       } );
@@ -315,7 +322,7 @@ export class Game {
       level: this.level,
       rally: this.rally,
       centre: this.squadCentre,
-      cohesion: 7.5,
+      cohesion: 7.0,
     };
 
     for ( const u of this.units ) {

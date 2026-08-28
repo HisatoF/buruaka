@@ -86,6 +86,8 @@ window.__diagnostics = () => ( {
   characters: chars.length,
   trisPerChar: Math.round( engine.renderer.info.render.triangles / chars.length ),
 } );
+window.__engine = engine;
+window.__chars = chars;
 window.__captureHealth = () => ( {
   ok: !engine.renderer.getContext().isContextLost(),
   contextLost: engine.renderer.getContext().isContextLost(),

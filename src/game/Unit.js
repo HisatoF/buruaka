@@ -254,7 +254,7 @@ export class Unit {
       if ( -this.coverPoint.normal.dot( _dir ) > 0.05 ) return;
       this.releaseCover();
     }
-    const cp = level.findCover( this.position, threat, this.team === TEAM.SQUAD ? 8 : 14 );
+    const cp = level.findCover( this.position, threat, this.team === TEAM.SQUAD ? 9 : 14 );
     if ( cp ) {
       cp.occupied = this;
       this.coverPoint = cp;
