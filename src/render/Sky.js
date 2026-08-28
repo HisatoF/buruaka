@@ -82,29 +82,47 @@ void main() {
 
   // --- clouds ---------------------------------------------------------
   if ( h > -0.02 ) {
-    // Project onto a virtual cloud plane so cumulus stretch correctly at the
-    // horizon instead of tiling like a dome texture.
-    float planeH = 1.0 / max( h + 0.09, 0.045 );
-    vec3 cp = vec3( dir.x * planeH, 0.0, dir.z * planeH ) * 0.12;
-    cp.x += uTime * 0.0075;
-    cp.z += uTime * 0.0032;
+    // Project onto a virtual cloud plane so cumulus stretch correctly toward
+    // the horizon instead of tiling like a dome texture. The height is clamped
+    // harder than a true projection: near the horizon the unclamped term runs
+    // to enormous values, the noise is sampled at a frequency far above what
+    // the pixel grid can resolve, and the whole band averages out to a flat
+    // wash — which is exactly what the sky used to look like.
+    float planeH = 1.0 / max( h * 0.80 + 0.16, 0.10 );
+    // Scale matters more than it looks: at 0.085 the whole visible sky mapped
+    // to less than one noise period, so the entire dome resolved to a single
+    // cloud mass and read as a flat cream wash. This gives roughly half a
+    // dozen distinct cumulus across the sky.
+    vec3 cp = vec3( dir.x * planeH, 0.0, dir.z * planeH ) * 0.95;
+    cp.x += uTime * 0.010;
+    cp.z += uTime * 0.004;
 
-    float base = fbm( cp * 1.0 + vec3( 0.0, uTime * 0.01, 0.0 ) );
-    float detail = fbm( cp * 3.7 + vec3( 11.3, 0.0, 4.1 ) );
-    float shape = base + detail * 0.32;
+    // Two decks. The lower one carries the silhouette, the upper adds a
+    // thinner veil so the sky is not one flat layer of blobs.
+    float baseN = fbm( cp * 0.85 );
+    float detail = fbm( cp * 2.6 + vec3( 11.3, 0.0, 4.1 ) );
+    float shape = baseN * 0.72 + detail * 0.28;
 
+    // Anime cumulus are bold flat masses with a firm edge, not a soft gradient,
+    // so the coverage threshold is narrow.
     float cover = smoothstep( uCloudCover, uCloudCover + uCloudSharpness, shape );
 
-    // Fake self-shadowing: sample the field again offset toward the sun.
-    vec3 sunOff = normalize( vec3( uSunDir.x, 0.0, uSunDir.z ) ) * 0.16;
-    float lit = fbm( ( cp + sunOff ) * 1.0 );
-    float density = clamp( ( shape - lit ) * 2.4 + 0.5, 0.0, 1.0 );
+    // Fake self-shadowing: resample offset toward the sun. The delta between
+    // the two samples is what gives a cloud a lit crown and a shaded belly.
+    vec3 sunOff = normalize( vec3( uSunDir.x, 0.0, uSunDir.z ) ) * 0.55;
+    float lit = fbm( ( cp + sunOff ) * 0.85 ) * 0.72;
+    float density = clamp( ( shape - lit ) * 3.0 + 0.52, 0.0, 1.0 );
 
-    vec3 cloudCol = mix( uCloudShadow, uCloudLight, density );
-    cloudCol += uSunColor * pow( sunDot, 8.0 ) * 0.35 * ( 1.0 - density );
+    vec3 cloudCol = mix( uCloudShadow, uCloudLight, smoothstep( 0.15, 0.85, density ) );
+    // A warm rim where a cloud edge faces the sun.
+    cloudCol += uSunColor * pow( sunDot, 16.0 ) * 0.26 * ( 1.0 - density );
 
-    float fade = smoothstep( -0.02, 0.11, h );
-    sky = mix( sky, cloudCol, cover * fade * 0.94 );
+    // A thin high veil, much fainter and moving faster.
+    float veil = smoothstep( 0.10, 0.34, fbm( cp * 0.22 + vec3( 40.0, uTime * 0.004, 17.0 ) ) );
+    sky = mix( sky, mix( sky, uCloudLight, 0.50 ), veil * smoothstep( 0.08, 0.34, h ) * 0.16 );
+
+    float fade = smoothstep( -0.02, 0.09, h );
+    sky = mix( sky, cloudCol, cover * fade * 0.96 );
   }
 
   gl_FragColor = vec4( sky, 1.0 );
@@ -121,8 +139,8 @@ export const SKY_PRESETS = {
     sunColor: 0xfff4d6,
     cloudLight: 0xfdfeff,
     cloudShadow: 0x93add6,
-    cloudCover: 0.05,
-    cloudSharpness: 0.26,
+    cloudCover: 0.055,
+    cloudSharpness: 0.055,
     haze: 0.30,
   },
   /** Late-afternoon operation window: warmer, longer shadows. */
@@ -133,8 +151,8 @@ export const SKY_PRESETS = {
     sunColor: 0xffd9a0,
     cloudLight: 0xfff0e2,
     cloudShadow: 0xb49ab6,
-    cloudCover: 0.02,
-    cloudSharpness: 0.34,
+    cloudCover: 0.085,
+    cloudSharpness: 0.06,
     haze: 0.72,
   },
   /** Overcast siege weather. */
@@ -145,8 +163,8 @@ export const SKY_PRESETS = {
     sunColor: 0xe8eef6,
     cloudLight: 0xdfe6f0,
     cloudShadow: 0x8a93a8,
-    cloudCover: -0.16,
-    cloudSharpness: 0.42,
+    cloudCover: -0.04,
+    cloudSharpness: 0.09,
     haze: 0.85,
   },
 };

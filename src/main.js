@@ -176,6 +176,9 @@ async function main() {
     game:     null,                                   // live gameplay camera
     overview: { pos: [ 0, 26, 34 ], look: [ 0, 0, -2 ], fov: 40 },
     street:   { pos: [ 0, 1.8, 16 ], look: [ 0, 1.4, -12 ], fov: 42 },
+    // Deliberately tilted up, so the sky can be judged rather than inferred
+    // from the sliver a gameplay camera happens to leave above the rooftops.
+    skyward:  { pos: [ 0, 2.2, 10 ], look: [ 0, 16, -22 ], fov: 55 },
     // Framings that follow the fight, resolved at capture time.
     firefight: 'nearestContact',
     portrait:  'squadCloseup',

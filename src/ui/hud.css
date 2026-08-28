@@ -1849,3 +1849,11 @@
 /* The banner's hazard stripe ran the full width of an unskewed band, so it
    overshot the skewed ends. Inset it by the shear amount. */
 .bn__stripe { left: 3% !important; right: 3% !important; }
+
+/* Back below the HUD. Promoting the FX layer above everything did let the
+   flash frame the interface, but it also put the directional damage vignette
+   over the roster and the skill deck — so taking fire tinted the controls
+   coral and made the cost pips unreadable at exactly the moment they matter.
+   A full-screen tint that obscures the UI is worse than one that sits under
+   it. */
+.fx { z-index: 3 !important; }
