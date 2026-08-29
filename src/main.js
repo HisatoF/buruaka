@@ -53,7 +53,10 @@ async function main() {
   const sky = new Sky( 'noon' );
   engine.scene.add( sky.mesh );
 
-  const lighting = new LightingRig( engine.scene, { shadowExtent: 22, shadowMapSize: 2048 } );
+  // A tighter frustum around the action doubles the texel density, which is
+  // what a crisp cel shadow edge actually needs — the map resolution was never
+  // the limit, the area it was being stretched over was.
+  const lighting = new LightingRig( engine.scene, { shadowExtent: 15, shadowMapSize: 2048 } );
   sky.setSunDirection( lighting.sunDirection );
   engine.scene.fog = new THREE.Fog( 0x9ed4f7, 45, 190 );
 

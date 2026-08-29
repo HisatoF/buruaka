@@ -21,10 +21,10 @@ export class LightingRig {
     this.key.shadow.mapSize.set( options.shadowMapSize ?? 2048, options.shadowMapSize ?? 2048 );
     this.key.shadow.bias = -0.0006;
     this.key.shadow.normalBias = 0.055;
-    this.key.shadow.radius = 1.1;
+    this.key.shadow.radius = 0.65;
     this.key.shadow.intensity = 1;
 
-    const d = options.shadowExtent ?? 26;
+    const d = options.shadowExtent ?? 26;   // metres; halving it doubles texel density
     const cam = this.key.shadow.camera;
     cam.left = -d; cam.right = d; cam.top = d; cam.bottom = -d;
     cam.near = 0.5; cam.far = 90;

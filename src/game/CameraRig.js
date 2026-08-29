@@ -22,8 +22,8 @@ export class CameraRig {
 
     this.yaw = opts.yaw ?? 0;
     this.pitch = opts.pitch ?? 0.34;          // radians below horizontal
-    this.distance = opts.distance ?? 8.6;
-    this.minDistance = 6.5;
+    this.distance = opts.distance ?? 10.0;
+    this.minDistance = 7.8;
     this.maxDistance = 22;
     this.height = opts.height ?? 1.4;
 
@@ -35,6 +35,19 @@ export class CameraRig {
     this.focus = new THREE.Vector3( 0, 1.2, 0 );
     this.smoothed = new THREE.Vector3( 0, 1.2, 0 );
     this.position = new THREE.Vector3();
+
+    /**
+     * Optional collision source. When set, the rig sweeps from the focus point
+     * out to the desired camera position and pulls in on anything solid — a
+     * camera that ends up inside a shipping container shows the player the
+     * inside of a shipping container, which is both useless and disorienting.
+     * @type {{ spherecast: Function }|null}
+     */
+    this.collider = opts.collider ?? null;
+    this.collisionMask = opts.collisionMask ?? 1;   // LAYER_STATIC
+    this.collisionRadius = opts.collisionRadius ?? 0.45;
+    this._collisionDistance = this.distance;
+    this._collisionPitch = this.pitch;
 
     this._shake = 0;
     this._shakeDecay = 3.2;
@@ -89,6 +102,7 @@ export class CameraRig {
     this.smoothed.lerp( _target, k );
 
     const dist = THREE.MathUtils.clamp( this.distance + spread * 0.26, this.minDistance, this.maxDistance );
+    let usedDistance = dist;
 
     _offset.set(
       Math.sin( this.yaw ) * Math.cos( this.pitch ),
@@ -96,8 +110,59 @@ export class CameraRig {
       Math.cos( this.yaw ) * Math.cos( this.pitch )
     ).multiplyScalar( dist );
 
+    // --- collision -------------------------------------------------------
+    // Pulling the boom in is not enough on its own. When the squad is hugging
+    // a container, the obstruction sits closer than the minimum distance, so
+    // clamping just parks the camera inside the container instead of behind
+    // it. Real cameras solve this by climbing: if the boom is blocked at this
+    // pitch, try a steeper one and look down over the obstacle.
+    if ( this.collider ) {
+      let chosenPitch = this.pitch;
+      let chosenDist = dist;
+      let cleared = false;
+
+      for ( const extra of [ 0, 0.18, 0.38, 0.62, 0.92 ] ) {
+        const p = Math.min( this.pitch + extra, 1.32 );
+        _tmp.set(
+          Math.sin( this.yaw ) * Math.cos( p ),
+          Math.sin( p ),
+          Math.cos( this.yaw ) * Math.cos( p )
+        );
+        const hit = this.collider.spherecast(
+          this.smoothed, _tmp, this.collisionRadius, dist, this.collisionMask
+        );
+        if ( !hit || !hit.hit ) { chosenPitch = p; chosenDist = dist; cleared = true; break; }
+        // Remember the best partial result in case nothing fully clears.
+        const usable = hit.distance - this.collisionRadius;
+        if ( usable > chosenDist || extra === 0 ) { chosenPitch = p; chosenDist = usable; }
+      }
+
+      // No floor tied to minDistance here. If nothing clears at any pitch, the
+      // camera has to accept a short boom: cramped but outside the geometry is
+      // strictly better than roomy but inside it, and clamping back up to a
+      // "comfortable" distance is exactly what put the lens inside a shipping
+      // container twice. Only an absolute floor, to stay off the characters.
+      if ( !cleared ) chosenDist = Math.max( chosenDist, 1.6 );
+
+      // Snap in immediately when something intrudes, but ease back out — the
+      // reverse reads as the camera being shoved by geometry it has left.
+      this._collisionDistance = chosenDist < this._collisionDistance
+        ? chosenDist
+        : this._collisionDistance + ( chosenDist - this._collisionDistance ) * Math.min( 1, dt * 2.2 );
+      this._collisionPitch += ( chosenPitch - this._collisionPitch ) * Math.min( 1, dt * 4.5 );
+
+      usedDistance = Math.min( dist, this._collisionDistance );
+      const finalDist = usedDistance;
+      const cp = this._collisionPitch;
+      _offset.set(
+        Math.sin( this.yaw ) * Math.cos( cp ),
+        Math.sin( cp ),
+        Math.cos( this.yaw ) * Math.cos( cp )
+      ).multiplyScalar( finalDist );
+    }
+
     _desired.copy( this.smoothed ).add( _offset );
-    _desired.y = Math.max( _desired.y, 2.2 );   // never dip below the props
+    _desired.y = Math.max( _desired.y, 1.4 );   // never dip below the props
 
     this.position.lerp( _desired, 1 - Math.pow( 0.002, dt ) );
 
@@ -122,7 +187,13 @@ export class CameraRig {
     if ( this._shake > 0.001 ) this.camera.rotateZ( Math.sin( performance.now() * 0.041 ) * this._shake * 0.012 );
 
     // --- fov ---------------------------------------------------------------
-    this._fovTarget += ( this._fovBase - this._fovTarget ) * Math.min( 1, dt * 3.5 );
+    // Widen as the boom is forced in. A camera shoved against cover otherwise
+    // frames two backs and a wall; opening the lens keeps roughly the same
+    // amount of world on screen while the geometry is crowding it.
+    const squeeze = THREE.MathUtils.clamp( 1 - usedDistance / Math.max( dist, 1e-3 ), 0, 1 );
+    this._fovTarget = this._fovBase + squeeze * 16;
+
+    this._fovTarget += ( this._fovBase - this._fovTarget ) * Math.min( 1, dt * 3.5 ) * ( 1 - squeeze );
     if ( Math.abs( this.camera.fov - this._fovTarget ) > 0.01 ) {
       this.camera.fov += ( this._fovTarget - this.camera.fov ) * Math.min( 1, dt * 9 );
       this.camera.updateProjectionMatrix();

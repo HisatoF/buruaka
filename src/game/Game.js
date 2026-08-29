@@ -45,7 +45,13 @@ export class Game {
     this.level = new Level( this.physics, { quality } );
     scene.add( this.level.group );
 
-    this.cameraRig = new CameraRig( camera, { distance: 8.6, pitch: 0.34 } );
+    this.cameraRig = new CameraRig( camera, {
+      distance: 10.0,
+      pitch: 0.34,
+      // Sweeping against the static world keeps the camera out of containers.
+      collider: this.physics,
+      collisionMask: LAYER_STATIC,
+    } );
 
     this.squad = [];
     this.hostiles = [];

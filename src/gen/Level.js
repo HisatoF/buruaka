@@ -522,8 +522,10 @@ export class Level {
       rimStrength: 0,
       // Paving is stone, not cloth: its shadow should stay neutral rather
       // than picking up the violet the character ramp uses.
-      shadowTint: 0xb6b4c2,
-      midTint: 0xdad8e2,
+      shadowTint: 0xa9a3c8,
+      midTint: 0xd2cee2,
+      shadowSoft: 0.022,
+      midSoft: 0.040,
     } ) );
     this._materials.push( groundMat );
 
@@ -548,8 +550,10 @@ export class Level {
       vertexTint: false,
       specStrength: 0.02,
       rimStrength: 0,
-      shadowTint: 0xb2b0be,
-      midTint: 0xd6d4de,
+      shadowTint: 0xa5a0c4,
+      midTint: 0xcecade,
+      shadowSoft: 0.022,
+      midSoft: 0.040,
     } ) );
     this._materials.push( roadMat );
 
@@ -818,7 +822,7 @@ export class Level {
    * Scores by cover quality, proximity, and whether the cover actually sits
    * between the unit and the threat.
    */
-  findCover( from, threat, maxDistance = 14, spacing = 3.8 ) {
+  findCover( from, threat, maxDistance = 14, spacing = 4.6 ) {
     let best = null, bestScore = -Infinity;
     const toThreat = _v1.subVectors( threat, from ).setY( 0 ).normalize();
 
@@ -839,7 +843,7 @@ export class Level {
       for ( const other of this.coverPoints ) {
         if ( !other.occupied || other === cp ) continue;
         const d = other.position.distanceTo( cp.position );
-        if ( d < spacing ) crowding += ( 1 - d / spacing ) * 4.2;
+        if ( d < spacing ) crowding += ( 1 - d / spacing ) * 5.4;
       }
 
       const score = cp.quality * 2.2 + facing * 1.6 - dist * 0.12 - crowding;
