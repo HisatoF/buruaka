@@ -339,6 +339,13 @@ export class HUD {
     this._buildScreens();
     this._buildTouch();
     this._bind();
+
+    // The rank stamp is authored inside the results body but belongs beside
+    // the title on wide layouts, where a dedicated column for it left a
+    // quarter of the card empty. Reparented once here rather than duplicated.
+    this._stampHost = { wide: this.screens.hd, narrow: this.screens.body };
+    this._placeStamp();
+    window.addEventListener( 'resize', () => this._placeStamp() );
   }
 
   /* ---------------- construction ---------------- */
@@ -555,15 +562,22 @@ export class HUD {
     right.style.gap = '8px';
     right.style.minWidth = '0';
     const stats = el( 'div', 'res__stats', right );
+    const unitHead = el( 'div', 'res__uhead', right );
+    for ( const label of [ '', 'DAMAGE', 'DEFEATED', 'HEALED' ] ) {
+      el( 'span', null, unitHead, label );
+    }
     const units = el( 'div', 'res__units', right );
     const foot = el( 'div', 'res__foot', res );
+    const toTitle = el( 'button', 'btn btn--sm btn--ghost', foot );
+    toTitle.type = 'button';
+    el( 'span', null, toTitle, 'TO TITLE' );
     const again = el( 'button', 'btn btn--sm', foot );
     again.type = 'button';
     el( 'span', null, again, 'RETRY' );
 
     this.screens = {
       title: t, results: r, res, rTitle, stamp, stampL, stats, units,
-      play, setBtn, again, settings: st, key: '',
+      play, setBtn, again, toTitle, hd, body, settings: st, key: '',
     };
   }
 
@@ -670,6 +684,7 @@ export class HUD {
     const s = this.screens;
     s.play.addEventListener( 'click', () => { this._toggleSettings( false ); this.cb.onStart?.(); } );
     s.again.addEventListener( 'click', () => this.cb.onRestart?.() );
+    s.toTitle.addEventListener( 'click', () => this.cb.onToTitle?.() );
     s.setBtn.addEventListener( 'click', () => this._toggleSettings( ) );
     s.settings.close.addEventListener( 'click', () => this._toggleSettings( false ) );
 
@@ -1386,6 +1401,15 @@ export class HUD {
   /* ---------------- lifecycle ---------------- */
 
   /** Show/hide the whole HUD without tearing it down. */
+  /** Puts the rank stamp beside the title when there is room for it. */
+  _placeStamp() {
+    const stamp = this.screens?.stamp;
+    if ( !stamp ) return;
+    const wide = ( this.host.clientWidth || window.innerWidth ) >= 620;
+    const host = wide ? this._stampHost.wide : this._stampHost.narrow;
+    if ( stamp.parentElement !== host ) host.appendChild( stamp );
+  }
+
   /** Shows or hides the pause veil. */
   setPaused( on ) {
     if ( !this._pause ) {

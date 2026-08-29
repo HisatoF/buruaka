@@ -1857,3 +1857,48 @@
    A full-screen tint that obscures the UI is worse than one that sits under
    it. */
 .fx { z-index: 3 !important; }
+
+
+/* ----------------------------------------------------------------------
+   Results screen refinements
+   ---------------------------------------------------------------------- */
+
+/* The rank stamp sat in its own column, vertically centred against a tall
+   stat stack, which left roughly a quarter of the card as empty white above
+   and below it. Moving it up into the header row alongside the title reclaims
+   that space and gives the headline the emphasis it should have had. */
+@media (min-width: 620px) {
+  /* The header has to be tall enough to contain the stamp, or the stamp
+     overflows the card's rounded top edge and the title runs underneath it. */
+  .res__hd { position: relative; padding-right: 150px; min-height: 132px; }
+  .res__hd > .stamp {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%) scale(0.86);
+    transform-origin: center;
+    margin: 0;
+  }
+  .res__title { align-self: center; }
+  .res__body { grid-template-columns: 1fr; align-items: start; }
+}
+
+/* Column header, so each student row carries values rather than repeating
+   the same three labels four times. */
+.res__uhead {
+  display: grid;
+  grid-template-columns: 1fr repeat(3, minmax(64px, 88px));
+  gap: 0 clamp(10px, 1.6vw, 26px);
+  padding: 8px 12px 3px;
+  font-family: var(--h-font-num, system-ui);
+  font-size: 9px;
+  letter-spacing: .18em;
+  color: var(--h-ink-soft, #5b6b86);
+  text-align: right;
+}
+.res__uhead span:first-child { text-align: left; }
+.res__units .ru__v s { display: none; }
+
+@media (max-width: 619px) {
+  .res__uhead { font-size: 8px; letter-spacing: .1em; padding: 4px 6px 2px; }
+}

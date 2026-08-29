@@ -67,6 +67,15 @@ async function main() {
     onSkill: ( i ) => game.useSkill( i ),
     onStart: () => startMission(),
     onRestart: () => { game.restart(); hud.banner( 'OPERATION START', 'KIVOTOS PLAZA', 'wave' ); },
+    onToTitle: () => {
+      // Back to the title without a page reload, so the shader-compile boot
+      // screen does not reappear.
+      game.restart();
+      game.phase = 'title';
+      game.cameraRig.enabled = true;
+      audio.music.setState( 'menu' );
+      hud.update( game.hudState(), engine.camera, engine.renderer );
+    },
     onSettings: ( s ) => applySettings( s ),
     onStick: ( v ) => { input.stick.set( v.x, v.y ); },
     onPause: ( on ) => setPaused( on ?? !paused ),
