@@ -6,6 +6,7 @@ import { Unit, TEAM } from './Unit.js';
 import { CameraRig } from './CameraRig.js';
 import { STUDENT_PRESETS, ENEMY_PRESETS } from '../gen/Character.js';
 import { SKILLS, applySkill } from './Skills.js';
+import { ARCHETYPES } from './Archetypes.js';
 import { WaveDirector } from './Waves.js';
 
 const _v = new THREE.Vector3();
@@ -47,7 +48,7 @@ export class Game {
 
     this.cameraRig = new CameraRig( camera, {
       distance: 10.0,
-      pitch: 0.34,
+      pitch: 0.46,
       // Sweeping against the static world keeps the camera out of containers.
       collider: this.physics,
       collisionMask: LAYER_STATIC,
@@ -115,6 +116,9 @@ export class Game {
       physics: this.physics,
       game: this,
       quality: this.quality,
+      // The visual preset and the behaviour archetype share a key, so a new
+      // enemy is one entry in each table rather than a special case in here.
+      archetype: ARCHETYPES[ presetKey ] ? presetKey : 'grunt',
     } );
     this.scene.add( unit.character.root );
     this.hostiles.push( unit );
@@ -180,12 +184,18 @@ export class Game {
       _v.copy( direction ).setY( 0 ).normalize();
       const dealt = victim.takeDamage( damage, _v, crit ? 'critical' : 'normal' );
 
-      this.vfx.emit( 'impactFlesh', { position: hit.point, direction: hit.normal, scale: crit ? 0.75 : 0.5, count: 0.7 } );
+      // A round that hit a shield gets a metallic spark and a GUARD readout,
+      // so the player can tell "this is doing nothing" from "this is working".
+      const blocked = victim.lastHitShielded;
+      this.vfx.emit( blocked ? 'impactShield' : 'impactFlesh', {
+        position: hit.point, direction: hit.normal,
+        scale: blocked ? 0.8 : ( crit ? 0.75 : 0.5 ), count: 0.7,
+      } );
       this.vfx.emit( 'hitSpark', { position: hit.point, direction: hit.normal, scale: crit ? 0.85 : 0.6 } );
 
       this._pendingDamage.push( {
         value: Math.round( dealt ),
-        kind: crit ? 'critical' : 'normal',
+        kind: blocked ? 'block' : ( crit ? 'critical' : 'normal' ),
         position: hit.point.clone(),
       } );
 
@@ -262,6 +272,28 @@ export class Game {
     if ( unit.team === TEAM.SQUAD ) {
       this.cameraRig.shake( unit.stats.kind === 'sniper' ? 0.22 : 0.05, 6 );
     }
+  }
+
+  /**
+   * A marksman painting its next shot. Drawn as a thin beam from muzzle to
+   * target so the player gets a beat to move or break line of sight.
+   */
+  onTelegraph( unit, aimPoint ) {
+    const muzzle = unit.character.weapon?.muzzle;
+    if ( !muzzle ) return;
+    muzzle.getWorldPosition( _v );
+    _v2.subVectors( aimPoint, _v );
+    const len = _v2.length();
+    _v2.normalize();
+
+    // Seeded along the line rather than as one stretched sprite: the particle
+    // pool has no long-quad primitive, and a dotted line reads as a laser.
+    const steps = Math.min( 16, Math.max( 6, Math.round( len / 1.6 ) ) );
+    for ( let i = 1; i <= steps; i++ ) {
+      _v.addScaledVector( _v2, len / steps );
+      this.vfx.emit( 'bulletTrail', { position: _v, direction: _v2, count: 0.35, color: 0xff6a6a } );
+    }
+    this.audio?.playAt?.( 'skillReady', unit.position );
   }
 
   onReload( unit ) {
@@ -517,8 +549,9 @@ export class Game {
         hp: Math.round( h.hp ),
         maxHp: Math.round( h.maxHp ),
         shield: 0,
-        tags: h.statuses.length ? h.statuses.map( ( st ) => st.name.toUpperCase() )
-          : ( h.armor > 0 ? [ 'HEAVY' ] : [ 'LIGHT' ] ),
+        tags: h.statuses.length
+          ? h.statuses.map( ( st ) => st.name.toUpperCase() )
+          : ( h.tags ?? ( h.armor > 0 ? [ 'ARMOR' ] : [ 'LIGHT' ] ) ),
         // Nameplates were drawing at full strength through containers and
         // planters that completely hide their owner, which reads as the UI
         // lying about what the player can see.

@@ -21,7 +21,7 @@ export class CameraRig {
     this.camera = camera;
 
     this.yaw = opts.yaw ?? 0;
-    this.pitch = opts.pitch ?? 0.34;          // radians below horizontal
+    this.pitch = opts.pitch ?? 0.46;          // radians below horizontal
     this.distance = opts.distance ?? 10.0;
     this.minDistance = 7.8;
     this.maxDistance = 22;
@@ -162,7 +162,9 @@ export class CameraRig {
     }
 
     _desired.copy( this.smoothed ).add( _offset );
-    _desired.y = Math.max( _desired.y, 1.4 );   // never dip below the props
+    // Above container height. Below this the lens sits level with the cover
+    // the squad is using and the frame becomes a crate face.
+    _desired.y = Math.max( _desired.y, 3.1 );
 
     this.position.lerp( _desired, 1 - Math.pow( 0.002, dt ) );
 

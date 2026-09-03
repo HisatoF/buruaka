@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildCharacter } from '../gen/Character.js';
 import { LAYER_STATIC, LAYER_CHARACTER, LAYER_ENEMY } from '../physics/World.js';
+import { applyArchetype, frontalMitigation, updateArchetype } from './Archetypes.js';
 
 /**
  * A combat unit: a procedural character, a physics capsule, and a small
@@ -100,6 +101,11 @@ export class Unit {
 
     /** @type {Array<{id:string,kind:string,icon:string,name:string,duration:number,maxDuration:number,stacks:number,onEnd?:Function}>} */
     this.statuses = [];
+
+    this.tags = null;
+    this.threat = 1;
+    this.coverAffinity = 1;
+    if ( cfg.archetype ) applyArchetype( this, cfg.archetype );
   }
 
   get position() { return this.body.position; }
@@ -127,8 +133,12 @@ export class Unit {
     // switching weapons for but never immune. Armour is also a *depleting*
     // resource — the roster shows it as pips, and pips that never move are
     // decoration rather than information.
-    const reduced = Math.max( amount * 0.15, amount - this.armor * 2.5 );
+    // A shield in the way beats any amount of armour, and it is directional:
+    // the whole point of the archetype is that shooting it head-on is wasted.
+    const shielded = frontalMitigation( this, fromDirection );
+    const reduced = Math.max( amount * 0.15, amount - this.armor * 2.5 ) * shielded;
     this.hp = Math.max( 0, this.hp - reduced );
+    this.lastHitShielded = shielded < 1;
 
     this._armorFloat = Math.max( 0, ( this._armorFloat ?? this.armor ) - amount / ( this.maxHp * 0.16 ) );
     this.armor = Math.ceil( this._armorFloat );
@@ -297,13 +307,22 @@ export class Unit {
 
     const dist = this.position.distanceTo( this.target.position );
     const visible = this.physics.lineOfSight( this.chestPoint( _v ), this.target.chestPoint( _v2 ), LAYER_STATIC );
-    const idealRange = this.stats.range * 0.72;
+    const idealRange = this.stats.range * ( this.arch?.standoff ?? 0.72 );
     const inFightingRange = visible && dist <= this.stats.range * 1.05;
 
     // Cover is only worth taking once the fight is actually joined. Seeking
     // it the moment a target is *detected* — which can be 40 m out — makes
     // both sides dig in at their spawns and stare at each other, which is how
     // this read before the check was added.
+    if ( this.melee ) {
+      // Closing is the whole behaviour: run straight at the target and keep
+      // running until the swing lands.
+      this.releaseCover();
+      this.state = dist <= this.melee.range ? 'engage' : 'advance';
+      this.destination = dist <= this.melee.range * 0.8 ? null : this.target.position;
+      return;
+    }
+
     if ( !inFightingRange ) {
       this.releaseCover();
       this.state = 'advance';
@@ -314,7 +333,9 @@ export class Unit {
       return;
     }
 
-    this._chooseCover( level, this.target.position );
+    // A rusher has no interest in cover, and a marksman wants it badly.
+    if ( this.coverAffinity > 0.05 ) this._chooseCover( level, this.target.position );
+    else this.releaseCover();
 
     if ( this.coverPoint && this.coverPoint.position.distanceTo( this.position ) > 0.7 ) {
       this.state = 'moveToCover';
@@ -352,6 +373,7 @@ export class Unit {
     }
 
     this._tickStatuses( dt );
+    updateArchetype( this, dt, this.game );
 
     this._think -= dt;
     if ( this._think <= 0 ) {
@@ -418,7 +440,7 @@ export class Unit {
   _updateWeapon( dt, elapsed ) {
     const canEngage = this.target && !this.target.dead;
 
-    if ( canEngage ) {
+    if ( canEngage && !this.melee ) {
       this.target.chestPoint( _aim );
       this.animator.setAim( _aim, 1 );
       this.character.lookAt( _aim );
@@ -426,6 +448,8 @@ export class Unit {
       this.animator.setAim( null, 0 );
       this.character.lookAt( null );
     }
+
+    if ( this.melee ) return;   // no firearm to service
 
     if ( this._reloadTimer > 0 ) {
       this._reloadTimer -= dt;
@@ -447,6 +471,20 @@ export class Unit {
     // Only shoot if the shot can actually get there — otherwise units burn
     // magazines into the cover they are hiding behind.
     if ( !this.physics.lineOfSight( this.chestPoint( _v ), _aim, LAYER_STATIC ) ) return;
+
+    // Marksmen paint the shot before taking it. A hit that arrives with no
+    // warning reads as unfair; the same hit after a visible sight line reads
+    // as the player's mistake.
+    if ( this.telegraph ) {
+      if ( this.telegraph.left <= 0 && !this.telegraph.armed ) {
+        this.telegraph.left = this.telegraph.duration;
+        this.telegraph.armed = true;
+        this.game?.onTelegraph?.( this, _aim );
+        return;
+      }
+      if ( this.telegraph.left > 0 ) return;
+      this.telegraph.armed = false;
+    }
 
     this.fire( _aim );
   }

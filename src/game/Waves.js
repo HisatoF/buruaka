@@ -9,15 +9,24 @@ import * as THREE from 'three';
  * never materialise inside the player's field of view.
  */
 
+/**
+ * Wave composition.
+ *
+ * Each archetype is introduced on its own before it is combined with anything
+ * else, so the player meets one new problem at a time and can learn what it
+ * does before it arrives inside a crowd. The escalation is in *kind* — a
+ * marksman plus a bulwark is a different fight from six grunts, whereas eight
+ * grunts is only a longer one.
+ */
 const WAVES = [
-  { grunts: 3, heavies: 0, delay: 2.0 },
-  { grunts: 4, heavies: 0, delay: 3.5 },
-  { grunts: 4, heavies: 1, delay: 3.5 },
-  { grunts: 5, heavies: 1, delay: 4.0 },
-  { grunts: 5, heavies: 2, delay: 4.0 },
-  { grunts: 6, heavies: 2, delay: 4.5 },
-  { grunts: 6, heavies: 3, delay: 4.5 },
-  { grunts: 8, heavies: 3, delay: 5.0, boss: true },
+  { comp: { grunt: 3 }, delay: 2.0 },
+  { comp: { grunt: 4, rusher: 1 }, delay: 3.5, intro: 'RUSHER' },
+  { comp: { grunt: 3, heavy: 1, marksman: 1 }, delay: 3.5, intro: 'MARKSMAN' },
+  { comp: { grunt: 4, rusher: 2, heavy: 1 }, delay: 4.0 },
+  { comp: { grunt: 3, bulwark: 1, marksman: 1 }, delay: 4.0, intro: 'BULWARK' },
+  { comp: { grunt: 4, mender: 1, heavy: 2 }, delay: 4.5, intro: 'MENDER' },
+  { comp: { grunt: 4, rusher: 2, bulwark: 1, marksman: 2 }, delay: 4.5 },
+  { comp: { grunt: 5, heavy: 2, bulwark: 1, mender: 1, marksman: 2 }, delay: 5.0, boss: true },
 ];
 
 const _v = new THREE.Vector3();
@@ -81,17 +90,22 @@ export class WaveDirector {
     this.wave++;
     this._state = 'active';
 
-    for ( let i = 0; i < spec.grunts; i++ ) this._spawnQueue.push( 'grunt' );
-    for ( let i = 0; i < spec.heavies; i++ ) this._spawnQueue.push( 'heavy' );
+    for ( const [ kind, count ] of Object.entries( spec.comp ) ) {
+      for ( let i = 0; i < count; i++ ) this._spawnQueue.push( kind );
+    }
 
-    // Interleave so heavies don't all arrive last.
+    // Interleave so the specials don't all arrive last.
     this._spawnQueue.sort( () => Math.random() - 0.5 );
     // The boss lands last, so the escort is already engaged when it arrives.
     if ( spec.boss ) this._spawnQueue.push( 'hieromonk' );
     this._spawnTimer = 0;
 
     this.game._events.push( { type: 'wave', wave: this.wave, total: this.totalWaves } );
-    this.game.hud?.banner?.( `WAVE ${String( this.wave ).padStart( 2, '0' )}`, 'HOSTILES INBOUND', 'wave' );
+    this.game.hud?.banner?.(
+      `WAVE ${String( this.wave ).padStart( 2, '0' )}`,
+      spec.intro ? `${spec.intro} DETECTED` : 'HOSTILES INBOUND',
+      'wave'
+    );
     this.game.audio?.play?.( 'waveIncoming' );
     this.game.audio?.setIntensity?.( 0.4 + ( this.wave / this.totalWaves ) * 0.6 );
   }

@@ -104,6 +104,82 @@ export const ENEMY_PRESETS = {
     outlineColor: 0x1b1622,
   },
 
+  /** Long coat, scoped rifle, cold palette — reads as a marksman at distance. */
+  marksman: {
+    name: 'MARKSMAN', hostile: true,
+    skin: 0xd6c2b4,
+    hair: { color: 0x2c3a4e, accent: 0x4d6178, style: 'short' },
+    eyes: { color: 0x6fd8ff, shape: 'cool', lash: 0x1c2430 },
+    brow: 0x2a3644,
+    outfit: {
+      shirt: 0x46546c, jacket: 0x38445a, skirt: null, trousers: 0x2e3846,
+      ribbon: 0x6fd8ff, socks: 0x232a36, shoes: 0x1b212b, trim: 0x6fd8ff,
+      sockBand: 0x2b323e, sole: 0x3c4450, belt: 0x232a36, cuff: 0x46546c,
+    },
+    halo: { type: 'diamond', color: 0x8fe4ff },
+    weapon: 'sniper',
+    faceless: true,
+    rimColor: 0x9fe8ff,
+  },
+
+  /** No weapon, hunched, hot palette. Everything about it says "closing". */
+  rusher: {
+    name: 'RUSHER', hostile: true,
+    skin: 0xe0b8a4,
+    hair: { color: 0x8c2d3a, accent: 0xd05a5e, style: 'short' },
+    eyes: { color: 0xffd54a, shape: 'sharp', lash: 0x2a1418 },
+    brow: 0x6a2530,
+    outfit: {
+      shirt: 0x8a3540, jacket: 0x6e2833, skirt: null, trousers: 0x4c1d26,
+      ribbon: 0xffd54a, socks: 0x35141b, shoes: 0x260e14, trim: 0xff7a4a,
+      sockBand: 0x3d1a21, sole: 0x5a2530, belt: 0x35141b, cuff: 0x8a3540,
+    },
+    halo: { type: 'ring', color: 0xff8a5a },
+    weapon: null,
+    scale: 0.94,
+    faceless: true,
+    rimColor: 0xffb08a,
+  },
+
+  /** Bulk plus a shield. The silhouette has to say "do not shoot this face". */
+  bulwark: {
+    name: 'BULWARK', hostile: true,
+    skin: 0xcbb8a8,
+    hair: { color: 0x33363e, accent: 0x50545e, style: 'short' },
+    eyes: { color: 0xffb03a, shape: 'sharp', lash: 0x1e1e24 },
+    brow: 0x31343c,
+    outfit: {
+      shirt: 0x5d6472, jacket: 0x4a5160, skirt: null, trousers: 0x3b414d,
+      ribbon: 0xffb03a, socks: 0x2c313b, shoes: 0x22262e, trim: 0xffb03a,
+      sockBand: 0x363b45, sole: 0x4b515c, belt: 0x2c313b, cuff: 0x5d6472,
+      shield: 0x646d7e,
+    },
+    halo: { type: 'cross', color: 0xffc46a },
+    weapon: 'smg',
+    scale: 1.22,
+    faceless: true,
+    rimColor: 0xffd9a8,
+  },
+
+  /** Pale green, satchel-light, unarmoured. Reads as the one to shoot first. */
+  mender: {
+    name: 'MENDER', hostile: true,
+    skin: 0xdcc9b8,
+    hair: { color: 0x3f6b4e, accent: 0x6fa87c, style: 'short' },
+    eyes: { color: 0x6fe0a4, shape: 'round', lash: 0x1e2a22 },
+    brow: 0x35543f,
+    outfit: {
+      shirt: 0xd8e6d8, jacket: 0x4c7a5a, skirt: null, trousers: 0x3a5a45,
+      ribbon: 0x6fe0a4, socks: 0x2c4436, shoes: 0x223529, trim: 0x6fe0a4,
+      sockBand: 0x34503e, sole: 0x9fc0a8, belt: 0x2c4436, cuff: 0xd8e6d8,
+    },
+    halo: { type: 'wing', color: 0x9ff0c4 },
+    weapon: 'smg',
+    scale: 0.98,
+    faceless: true,
+    rimColor: 0xaff0cc,
+  },
+
   grunt: {
     name: 'GRUNT', hostile: true,
     skin: 0xd8c8bc,
@@ -419,6 +495,45 @@ function buildOutfit( design ) {
     sleeveL: mergeGeometries( sleeves[ '-1' ].map( ensureOutlineMask ) ),
     sleeveR: mergeGeometries( sleeves[ '1' ].map( ensureOutlineMask ) ),
   };
+}
+
+/**
+ * A riot shield, carried on the left forearm.
+ *
+ * Built as its own geometry rather than folded into the outfit because it must
+ * be skinned to the forearm alone — solved against the whole body it picks up
+ * chest influence and swings independently of the arm holding it.
+ */
+function riotShield( design ) {
+  const parts = [];
+  const plate = design.outfit.shield ?? 0x5a6272;
+  const trim = design.outfit.trim ?? 0xffb03a;
+
+  const body = roundedBox( 0.60, 0.92, 0.075, 0.05, 3 );
+  body.rotateY( 0.16 );
+  body.translate( -0.30, 1.045, 0.20 );
+  parts.push( paintGeometry( body, plate ) );
+
+  // Viewport slit and hazard band: the shield has to read as a shield at
+  // gameplay distance, and a plain slab does not.
+  const slit = roundedBox( 0.34, 0.10, 0.02, 0.01, 1 );
+  slit.rotateY( 0.16 );
+  slit.translate( -0.30, 1.30, 0.245 );
+  parts.push( paintGeometry( slit, 0x2b3040 ) );
+
+  const band = roundedBox( 0.62, 0.11, 0.03, 0.01, 1 );
+  band.rotateY( 0.16 );
+  band.translate( -0.30, 0.78, 0.235 );
+  parts.push( paintGeometry( band, trim ) );
+
+  for ( const sy of [ -1, 1 ] ) {
+    const rib = roundedBox( 0.63, 0.045, 0.03, 0.012, 1 );
+    rib.rotateY( 0.16 );
+    rib.translate( -0.30, 1.045 + sy * 0.30, 0.235 );
+    parts.push( paintGeometry( rib, 0x8b93a4 ) );
+  }
+
+  return mergeGeometries( parts.map( ( g ) => allowOutline( g ) ) );
 }
 
 /**
@@ -871,6 +986,18 @@ export class Character {
       } );
       this.maskMaterial = maskMat;
       this._addSkinned( 'visor', maskGeo, maskMat, outlineMat, skeleton );
+    }
+
+    // --- shield -----------------------------------------------------------
+    if ( design.outfit.shield ) {
+      const shieldGeo = computeSmoothNormals( riotShield( design ) );
+      skinGeometry( shieldGeo, order, {
+        segments: allSegments,
+        only: [ 'lowerArmL', 'handL', 'upperArmL' ],
+        bias: { lowerArmL: 4.0, handL: 1.2, upperArmL: 0.4 },
+        falloff: 2.0,
+      } );
+      this._addSkinned( 'shield', shieldGeo, bodyMat, outlineMat, skeleton );
     }
 
     // --- halo -------------------------------------------------------------
